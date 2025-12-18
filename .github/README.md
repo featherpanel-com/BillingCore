@@ -20,18 +20,14 @@ Add these secrets to your GitHub repository:
 - `CLOUD_API_TOKEN`: Your API authentication token
 
 To add secrets:
+
 1. Go to your repository → Settings → Secrets and variables → Actions
 2. Click "New repository secret"
 3. Add each secret
 
-### 2. Update Package ID
+### 2. Package ID
 
-If your plugin has a different package ID than the default (31), update it in `.github/workflows/release.yml`:
-
-```yaml
-# Default package ID for billingcore (update this if needed)
-PACKAGE_ID="31"
-```
+The package ID is hardcoded to `31` for billingcore. If you need to change it, update the workflow file.
 
 ### 3. Configure `.featherexport`
 
@@ -40,7 +36,7 @@ Make sure your `.featherexport` file includes all files/directories that should 
 ```
 */node_modules/*
 /demo/*
-banner.png 
+banner.png
 README.md
 */App/*
 ```
@@ -58,6 +54,7 @@ README.md
    - Publish the release
 
 The workflow will automatically:
+
 - Build the frontend
 - Create the `.fpa` file
 - Upload to cloud API
@@ -68,8 +65,7 @@ The workflow will automatically:
 1. Go to Actions → Build and Release Plugin
 2. Click "Run workflow"
 3. Fill in the form:
-   - **Version**: Plugin version (e.g., `1.0.1`)
-   - **Package ID**: Your package ID from cloud API
+   - **Version**: Plugin version (e.g., `1.0.1`) - optional, will use conf.yml if not provided
    - **Changelog**: Release notes (optional)
 
 ## How It Works

@@ -7,11 +7,7 @@ on:
     inputs:
       version:
         description: "Plugin version (e.g., 1.0.0)"
-        required: true
-        type: string
-      package_id:
-        description: "Package ID from cloud API (31)"
-        required: true
+        required: false
         type: string
       changelog:
         description: "Changelog text"
@@ -34,18 +30,39 @@ jobs:
         with:
           node-version: "20"
           cache: "yarn"
-          cache-dependency-path: Frontend/App/yarn.lock
+          cache-dependency-path: |
+            Frontend/App/yarn.lock
+            backend/storage/addons/billingcore/Frontend/App/yarn.lock
 
       - name: Setup Yarn
         run: corepack enable && corepack prepare yarn@stable --activate
 
+      - name: Determine plugin directory
+        id: plugin_dir
+        run: |
+          # Check if we're in a plugin-only repo or full featherpanel repo
+          if [ -f "conf.yml" ] && [ -f "build-release.sh" ]; then
+            # Plugin-only repo (root is the plugin)
+            echo "PLUGIN_DIR=." >> $GITHUB_OUTPUT
+            echo "CONF_FILE=./conf.yml" >> $GITHUB_OUTPUT
+            echo "FRONTEND_DIR=./Frontend/App" >> $GITHUB_OUTPUT
+          elif [ -f "backend/storage/addons/billingcore/conf.yml" ]; then
+            # Full featherpanel repo
+            echo "PLUGIN_DIR=backend/storage/addons/billingcore" >> $GITHUB_OUTPUT
+            echo "CONF_FILE=backend/storage/addons/billingcore/conf.yml" >> $GITHUB_OUTPUT
+            echo "FRONTEND_DIR=backend/storage/addons/billingcore/Frontend/App" >> $GITHUB_OUTPUT
+          else
+            echo "::error::Could not find plugin directory"
+            exit 1
+          fi
+
       - name: Make build script executable
-        run: chmod +x build-release.sh
+        run: chmod +x ${{ steps.plugin_dir.outputs.PLUGIN_DIR }}/build-release.sh
 
       - name: Build plugin
         id: build
         run: ./build-release.sh
-        working-directory: backend/storage/addons/billingcore
+        working-directory: ${{ steps.plugin_dir.outputs.PLUGIN_DIR }}
 
       - name: Install zip utility
         run: sudo apt-get update && sudo apt-get install -y zip
@@ -53,11 +70,11 @@ jobs:
       - name: Extract plugin metadata
         id: metadata
         run: |
-          # Read conf.yml
-          CONF_FILE="backend/storage/addons/billingcore/conf.yml"
+          # Read conf.yml (use path from plugin_dir step)
+          CONF_FILE="${{ steps.plugin_dir.outputs.CONF_FILE }}"
 
           # Extract version (use workflow input if provided, otherwise from conf.yml or tag)
-          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ] && [ -n "${{ github.event.inputs.version }}" ]; then
             VERSION="${{ github.event.inputs.version }}"
           elif [ "${{ github.event_name }}" == "release" ]; then
             # Try to extract version from release tag (remove 'v' prefix if present)
@@ -127,13 +144,8 @@ jobs:
           echo "min_panel_version=${MIN_PANEL_VERSION}" >> $GITHUB_OUTPUT
           echo "max_panel_version=${MAX_PANEL_VERSION}" >> $GITHUB_OUTPUT
 
-          # Get package ID (from workflow input or default)
-          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
-            PACKAGE_ID="${{ github.event.inputs.package_id }}"
-          else
-            # Default package ID for billingcore (update this if needed)
-            PACKAGE_ID="31"
-          fi
+          # Package ID is always 31 for billingcore
+          PACKAGE_ID="31"
           echo "package_id=${PACKAGE_ID}" >> $GITHUB_OUTPUT
 
           # Get changelog
@@ -162,7 +174,7 @@ jobs:
             exit 0
           fi
 
-          EXPORT_FILE="backend/storage/addons/billingcore/${{ steps.metadata.outputs.identifier }}-${{ steps.metadata.outputs.version }}.fpa"
+          EXPORT_FILE="${{ steps.plugin_dir.outputs.PLUGIN_DIR }}/${{ steps.metadata.outputs.identifier }}-${{ steps.metadata.outputs.version }}.fpa"
 
           if [ ! -f "${EXPORT_FILE}" ]; then
             echo "::error::Export file not found: ${EXPORT_FILE}"
@@ -205,13 +217,13 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: plugin-release
-          path: backend/storage/addons/billingcore/*.fpa
+          path: ${{ steps.plugin_dir.outputs.PLUGIN_DIR }}/*.fpa
           retention-days: 30
 
       - name: Create GitHub Release Asset
         if: github.event_name == 'release'
         uses: softprops/action-gh-release@v1
         with:
-          files: backend/storage/addons/billingcore/*.fpa
+          files: ${{ steps.plugin_dir.outputs.PLUGIN_DIR }}/*.fpa
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
