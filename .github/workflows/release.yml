@@ -217,6 +217,7 @@ jobs:
           RESPONSE=$(curl -s -w "\n%{http_code}" -X POST \
             "https://cloud.mythical.systems/api/user/packages/${{ steps.metadata.outputs.package_id }}/versions" \
             -H "accept: application/json, text/plain, */*" \
+            -H "User-Agent: GitHub Runner" \
             -H "Cookie: remember_token=${API_TOKEN}" \
             -H "x-team-uuid: ${TEAM_UUID}" \
             -F "file=@${EXPORT_FILE}" \
