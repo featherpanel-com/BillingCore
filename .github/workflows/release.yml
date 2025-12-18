@@ -152,8 +152,7 @@ jobs:
           IDENTIFIER=$(grep -E "^\s*identifier:" "${CONF_FILE}" | sed -E 's/.*identifier:\s*["'\'']?([^"'\'']+)["'\'']?/\1/' | tr -d ' ')
 
           # Extract dependencies array - handle YAML array format
-          DEP_JSON="["
-          FIRST=true
+          DEP_ARRAY=()
           IN_DEPS=false
           while IFS= read -r line; do
             # Check if we're in dependencies section
@@ -174,21 +173,27 @@ jobs:
               DEP=$(echo "$DEP" | sed -E "s/^['\"]|['\"]$//g")
               # Include all dependencies (php=, php-ext=, composer=, plugin=)
               if [[ "$DEP" =~ ^(php|php-ext|composer|plugin)= ]]; then
-                if [ "$FIRST" = true ]; then
-                  FIRST=false
-                else
-                  DEP_JSON="${DEP_JSON},"
-                fi
-                DEP_JSON="${DEP_JSON}\"${DEP}\""
+                DEP_ARRAY+=("${DEP}")
               fi
             fi
           done < "${CONF_FILE}"
-          DEP_JSON="${DEP_JSON}]"
 
-          # If no dependencies found, use empty array
-          if [ "$DEP_JSON" = "[]" ] || [ "$FIRST" = true ]; then
+          # Build JSON array properly
+          if [ ${#DEP_ARRAY[@]} -eq 0 ]; then
             DEP_JSON="[]"
+          else
+            DEP_JSON="["
+            for i in "${!DEP_ARRAY[@]}"; do
+              if [ $i -gt 0 ]; then
+                DEP_JSON="${DEP_JSON},"
+              fi
+              # Properly quote each dependency
+              DEP_JSON="${DEP_JSON}\"${DEP_ARRAY[$i]}\""
+            done
+            DEP_JSON="${DEP_JSON}]"
           fi
+          
+          echo "Built dependencies JSON: ${DEP_JSON}"
 
           # Get min/max panel version from workflow input or use defaults
           MIN_PANEL_VERSION="1.1.2"  # Default
@@ -209,7 +214,7 @@ jobs:
 
           echo "version=${VERSION}" >> $GITHUB_OUTPUT
           echo "identifier=${IDENTIFIER}" >> $GITHUB_OUTPUT
-          # Output dependencies as JSON string (use EOF to preserve JSON format)
+          # Output dependencies as JSON string (use EOF to preserve JSON format with quotes)
           echo "dependencies<<EOF" >> $GITHUB_OUTPUT
           echo "${DEP_JSON}" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
@@ -217,7 +222,9 @@ jobs:
           echo "max_panel_version=${MAX_PANEL_VERSION}" >> $GITHUB_OUTPUT
           
           # Debug: Show what dependencies JSON looks like
-          echo "Dependencies JSON: ${DEP_JSON}"
+          echo "Dependencies JSON built: ${DEP_JSON}"
+          # Validate JSON format
+          echo "${DEP_JSON}" | python3 -m json.tool > /dev/null 2>&1 && echo "✓ Valid JSON" || echo "✗ Invalid JSON format"
 
           # Package ID is always 31 for billingcore
           PACKAGE_ID="30"
@@ -288,8 +295,20 @@ jobs:
           # Get dependencies JSON (should be a valid JSON array string like ["php=8.5","php-ext=pdo"])
           DEPENDENCIES_JSON="${{ steps.metadata.outputs.dependencies }}"
           
-          # Debug: Show what we're sending
+          # Debug: Show what we're sending and validate
           echo "Dependencies JSON being sent: ${DEPENDENCIES_JSON}"
+          echo "Length: ${#DEPENDENCIES_JSON}"
+          
+          # Validate it's proper JSON before sending
+          if ! echo "${DEPENDENCIES_JSON}" | python3 -m json.tool > /dev/null 2>&1; then
+            echo "::error::Invalid dependencies JSON format: ${DEPENDENCIES_JSON}"
+            echo "Expected format: [\"php=8.5\",\"php-ext=pdo\"]"
+            exit 1
+          fi
+          
+          # Write dependencies to temp file to avoid shell quoting issues
+          DEP_TEMP=$(mktemp)
+          echo -n "${DEPENDENCIES_JSON}" > "${DEP_TEMP}"
 
           # Upload using curl with multipart form data
           RESPONSE=$(curl -s -w "\n%{http_code}" -X POST \
@@ -302,10 +321,13 @@ jobs:
             -F "file=@${EXPORT_FILE}" \
             -F "version=${{ steps.metadata.outputs.version }}" \
             -F "changelog=${CHANGELOG_TEXT}" \
-            -F "dependencies=${DEPENDENCIES_JSON}" \
+            -F "dependencies=@${DEP_TEMP}" \
             -F "min_panel_version=${{ steps.metadata.outputs.min_panel_version }}" \
             -F "max_panel_version=${{ steps.metadata.outputs.max_panel_version }}" \
             -F "team_uuid=${TEAM_UUID}")
+          
+          # Cleanup temp file
+          rm -f "${DEP_TEMP}"
 
           HTTP_CODE=$(echo "${RESPONSE}" | tail -n1)
           BODY=$(echo "${RESPONSE}" | sed '$d')
