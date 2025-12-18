@@ -129,8 +129,27 @@ jobs:
         run: ./build-release.sh
         working-directory: ${{ steps.plugin_dir.outputs.PLUGIN_DIR }}
 
+      - name: Cache apt packages
+        uses: actions/cache@v4
+        with:
+          path: |
+            /var/cache/apt/archives
+            /var/lib/apt/lists
+          key: ${{ runner.os }}-apt-${{ hashFiles('**/apt-cache-key') }}
+          restore-keys: |
+            ${{ runner.os }}-apt-
+
       - name: Install zip utility
-        run: sudo apt-get update && sudo apt-get install -y zip
+        run: |
+          # Check if zip is already installed
+          if command -v zip &> /dev/null; then
+            echo "zip is already installed"
+            zip --version
+          else
+            echo "Installing zip..."
+            sudo apt-get update -qq
+            sudo apt-get install -y zip
+          fi
 
       - name: Extract plugin metadata
         id: metadata
