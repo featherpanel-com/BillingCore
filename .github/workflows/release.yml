@@ -238,7 +238,12 @@ jobs:
             echo "Bot Fight Mode disabled successfully"
           else
             echo "::warning::Failed to disable Bot Fight Mode: ${RESPONSE}"
+            echo "::warning::Error code 9109 means API token lacks permissions"
+            echo "::warning::Continuing anyway - upload may work if WAF rules allow it"
           fi
+
+          echo "Waiting 5 seconds for Bot Fight Mode to fully disable..."
+          sleep 5
 
       - name: Upload to Cloud API
         env:
@@ -341,6 +346,18 @@ jobs:
             echo "Bot Fight Mode re-enabled successfully"
           else
             echo "::warning::Failed to re-enable Bot Fight Mode: ${RESPONSE}"
+            echo "::warning::Attempting alternative method..."
+            # Try alternative endpoint
+            RESPONSE=$(curl -s -X PUT \
+              "https://api.cloudflare.com/client/v4/zones/${CF_ZONE_ID}/settings/bot_fight_mode" \
+              -H "Authorization: Bearer ${CF_API_TOKEN}" \
+              -H "Content-Type: application/json" \
+              --data '{"value":"on"}')
+            if echo "${RESPONSE}" | grep -q '"success":true'; then
+              echo "Bot Fight Mode re-enabled successfully (alternative method)"
+            else
+              echo "::warning::Both methods failed: ${RESPONSE}"
+            fi
           fi
 
       - name: Upload artifact
