@@ -217,6 +217,29 @@ jobs:
           echo "${CHANGELOG}" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
 
+      - name: Disable Cloudflare Bot Fight Mode
+        env:
+          CF_ZONE_ID: ${{ secrets.CF_ZONE_ID }}
+          CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+        run: |
+          if [ -z "${CF_ZONE_ID}" ] || [ -z "${CF_API_TOKEN}" ]; then
+            echo "::warning::Cloudflare credentials not set. Skipping Bot Fight Mode toggle."
+            exit 0
+          fi
+
+          echo "Disabling Cloudflare Bot Fight Mode..."
+          RESPONSE=$(curl -s -X PATCH \
+            "https://api.cloudflare.com/client/v4/zones/${CF_ZONE_ID}/settings/bot_fight_mode" \
+            -H "Authorization: Bearer ${CF_API_TOKEN}" \
+            -H "Content-Type: application/json" \
+            --data '{"value":"off"}')
+
+          if echo "${RESPONSE}" | grep -q '"success":true'; then
+            echo "Bot Fight Mode disabled successfully"
+          else
+            echo "::warning::Failed to disable Bot Fight Mode: ${RESPONSE}"
+          fi
+
       - name: Upload to Cloud API
         env:
           TEAM_UUID: ${{ secrets.CLOUD_TEAM_UUID }}
@@ -265,8 +288,6 @@ jobs:
           CHANGELOG_TEXT=$(echo "${CHANGELOG_TEXT}" | tr '\n' ' ' | sed 's/  */ /g')
 
           # Upload using curl with multipart form data
-          # WAF rule: (http.cookie contains "ghagent") or (http.referer wildcard r"https://github.com/*")
-          # Include both cookie and referer to match the rule
           RESPONSE=$(curl -s -w "\n%{http_code}" -X POST \
             "https://cloud.mythical.systems/api/user/packages/${{ steps.metadata.outputs.package_id }}/versions" \
             -H "accept: application/json, text/plain, */*" \
@@ -296,6 +317,30 @@ jobs:
             echo "::error::Failed to upload plugin (HTTP ${HTTP_CODE})"
             echo "Response: ${BODY}"
             exit 1
+          fi
+
+      - name: Re-enable Cloudflare Bot Fight Mode
+        if: always()
+        env:
+          CF_ZONE_ID: ${{ secrets.CF_ZONE_ID }}
+          CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+        run: |
+          if [ -z "${CF_ZONE_ID}" ] || [ -z "${CF_API_TOKEN}" ]; then
+            echo "::warning::Cloudflare credentials not set. Skipping Bot Fight Mode toggle."
+            exit 0
+          fi
+
+          echo "Re-enabling Cloudflare Bot Fight Mode..."
+          RESPONSE=$(curl -s -X PATCH \
+            "https://api.cloudflare.com/client/v4/zones/${CF_ZONE_ID}/settings/bot_fight_mode" \
+            -H "Authorization: Bearer ${CF_API_TOKEN}" \
+            -H "Content-Type: application/json" \
+            --data '{"value":"on"}')
+
+          if echo "${RESPONSE}" | grep -q '"success":true'; then
+            echo "Bot Fight Mode re-enabled successfully"
+          else
+            echo "::warning::Failed to re-enable Bot Fight Mode: ${RESPONSE}"
           fi
 
       - name: Upload artifact
