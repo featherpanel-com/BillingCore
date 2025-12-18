@@ -192,7 +192,7 @@ jobs:
             done
             DEP_JSON="${DEP_JSON}]"
           fi
-          
+
           echo "Built dependencies JSON: ${DEP_JSON}"
 
           # Get min/max panel version from workflow input or use defaults
@@ -215,12 +215,17 @@ jobs:
           echo "version=${VERSION}" >> $GITHUB_OUTPUT
           echo "identifier=${IDENTIFIER}" >> $GITHUB_OUTPUT
           # Output dependencies as JSON string (use EOF to preserve JSON format with quotes)
+          # Double-check JSON is valid before outputting
+          if ! echo "${DEP_JSON}" | python3 -m json.tool > /dev/null 2>&1; then
+            echo "::error::Invalid JSON format before output: ${DEP_JSON}"
+            exit 1
+          fi
           echo "dependencies<<EOF" >> $GITHUB_OUTPUT
           echo "${DEP_JSON}" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
           echo "min_panel_version=${MIN_PANEL_VERSION}" >> $GITHUB_OUTPUT
           echo "max_panel_version=${MAX_PANEL_VERSION}" >> $GITHUB_OUTPUT
-          
+
           # Debug: Show what dependencies JSON looks like
           echo "Dependencies JSON built: ${DEP_JSON}"
           # Validate JSON format
@@ -294,23 +299,42 @@ jobs:
 
           # Get dependencies JSON (should be a valid JSON array string like ["php=8.5","php-ext=pdo"])
           DEPENDENCIES_JSON="${{ steps.metadata.outputs.dependencies }}"
-          
+
           # Debug: Show what we're sending and validate
           echo "Dependencies JSON being sent: ${DEPENDENCIES_JSON}"
           echo "Length: ${#DEPENDENCIES_JSON}"
-          
+
           # Validate it's proper JSON before sending
           if ! echo "${DEPENDENCIES_JSON}" | python3 -m json.tool > /dev/null 2>&1; then
             echo "::error::Invalid dependencies JSON format: ${DEPENDENCIES_JSON}"
             echo "Expected format: [\"php=8.5\",\"php-ext=pdo\"]"
             exit 1
           fi
-          
-          # Write dependencies to temp file to avoid shell quoting issues
+
+          # Use python to ensure proper JSON encoding (handles quotes correctly)
+          # This re-encodes the JSON to ensure it's properly formatted
           DEP_TEMP=$(mktemp)
-          echo -n "${DEPENDENCIES_JSON}" > "${DEP_TEMP}"
+          echo "${DEPENDENCIES_JSON}" | python3 -c "import sys, json; print(json.dumps(json.load(sys.stdin)), end='')" > "${DEP_TEMP}" 2>/dev/null || printf '%s' "${DEPENDENCIES_JSON}" > "${DEP_TEMP}"
+
+          # Verify the file content matches expected format
+          echo "Dependencies file content: $(cat ${DEP_TEMP})"
+          echo "File size: $(wc -c < ${DEP_TEMP}) bytes"
+
+          # Verify JSON is still valid after file write
+          if ! cat "${DEP_TEMP}" | python3 -m json.tool > /dev/null 2>&1; then
+            echo "::error::JSON became invalid after file write"
+            echo "Content: $(cat ${DEP_TEMP})"
+            rm -f "${DEP_TEMP}"
+            exit 1
+          fi
+
+          # Show hex dump to verify quotes are present
+          echo "Hex dump of file content:"
+          cat "${DEP_TEMP}" | od -c | head -3
 
           # Upload using curl with multipart form data
+          # Use @ to read file content as form data value (not file upload)
+          # Note: curl's -F with @ reads the file content as the form field value
           RESPONSE=$(curl -s -w "\n%{http_code}" -X POST \
             "https://cloudrelay.mythicalsystems.xyz/api/user/packages/${{ steps.metadata.outputs.package_id }}/versions" \
             -H "accept: application/json, text/plain, */*" \
@@ -325,7 +349,7 @@ jobs:
             -F "min_panel_version=${{ steps.metadata.outputs.min_panel_version }}" \
             -F "max_panel_version=${{ steps.metadata.outputs.max_panel_version }}" \
             -F "team_uuid=${TEAM_UUID}")
-          
+
           # Cleanup temp file
           rm -f "${DEP_TEMP}"
 
