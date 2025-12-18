@@ -23,7 +23,11 @@ if [ -d "${PLUGIN_DIR}/Frontend/App" ]; then
     # Install dependencies - prefer pnpm
     if [ -f "pnpm-lock.yaml" ]; then
         echo -e "${YELLOW}Installing with pnpm...${NC}"
-        pnpm install --frozen-lockfile || pnpm install
+        # Try frozen lockfile first, fallback to regular install if config mismatch
+        if ! pnpm install --frozen-lockfile 2>&1; then
+            echo -e "${YELLOW}Lockfile config mismatch detected, updating lockfile...${NC}"
+            pnpm install --no-frozen-lockfile
+        fi
         BUILD_CMD="pnpm build"
     elif [ -f "package-lock.json" ]; then
         echo -e "${YELLOW}Installing with npm...${NC}"
