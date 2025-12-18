@@ -25,8 +25,12 @@ if [ -d "${PLUGIN_DIR}/Frontend/App" ]; then
         # Check Yarn version and use appropriate flag
         YARN_VERSION=$(yarn --version 2>/dev/null | cut -d. -f1 || echo "1")
         if [ "${YARN_VERSION}" -ge "4" ]; then
-            # Yarn 4.x - use --immutable
-            yarn install --immutable || yarn install
+            # Yarn 4.x - try immutable first, fallback to regular install if lockfile needs updating
+            echo -e "${YELLOW}Installing with Yarn 4.x...${NC}"
+            if ! yarn install --immutable 2>&1; then
+                echo -e "${YELLOW}Lockfile needs updating, running regular install...${NC}"
+                yarn install
+            fi
         else
             # Yarn 1.x/3.x - use --frozen-lockfile
             yarn install --frozen-lockfile || yarn install
