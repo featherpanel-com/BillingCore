@@ -22,15 +22,25 @@ if [ -d "${PLUGIN_DIR}/Frontend/App" ]; then
     
     # Install dependencies
     if [ -f "yarn.lock" ]; then
-        yarn install --frozen-lockfile
+        # Check Yarn version and use appropriate flag
+        YARN_VERSION=$(yarn --version 2>/dev/null | cut -d. -f1 || echo "1")
+        if [ "${YARN_VERSION}" -ge "4" ]; then
+            # Yarn 4.x - use --immutable
+            yarn install --immutable || yarn install
+        else
+            # Yarn 1.x/3.x - use --frozen-lockfile
+            yarn install --frozen-lockfile || yarn install
+        fi
     elif [ -f "package-lock.json" ]; then
-        npm ci
+        npm ci || npm install
+    elif [ -f "pnpm-lock.yaml" ]; then
+        pnpm install --frozen-lockfile || pnpm install
     else
         yarn install || npm install
     fi
     
     # Build
-    yarn build || npm run build
+    yarn build || npm run build || pnpm build
     
     echo -e "${GREEN}Frontend build completed${NC}"
     cd "${PLUGIN_DIR}"

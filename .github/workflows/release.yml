@@ -35,7 +35,11 @@ jobs:
             backend/storage/addons/billingcore/Frontend/App/yarn.lock
 
       - name: Setup Yarn
-        run: corepack enable && corepack prepare yarn@stable --activate
+        run: |
+          corepack enable
+          corepack prepare yarn@stable --activate
+          # Ensure we're using Yarn 4.x compatible commands
+          yarn --version
 
       - name: Determine plugin directory
         id: plugin_dir
