@@ -20,31 +20,28 @@ if [ -d "${PLUGIN_DIR}/Frontend/App" ]; then
     echo -e "${YELLOW}Building frontend...${NC}"
     cd "${PLUGIN_DIR}/Frontend/App"
     
-    # Install dependencies
-    if [ -f "yarn.lock" ]; then
-        # Check Yarn version and use appropriate flag
-        YARN_VERSION=$(yarn --version 2>/dev/null | cut -d. -f1 || echo "1")
-        if [ "${YARN_VERSION}" -ge "4" ]; then
-            # Yarn 4.x - try immutable first, fallback to regular install if lockfile needs updating
-            echo -e "${YELLOW}Installing with Yarn 4.x...${NC}"
-            if ! yarn install --immutable 2>&1; then
-                echo -e "${YELLOW}Lockfile needs updating, running regular install...${NC}"
-                yarn install
-            fi
-        else
-            # Yarn 1.x/3.x - use --frozen-lockfile
-            yarn install --frozen-lockfile || yarn install
-        fi
-    elif [ -f "package-lock.json" ]; then
-        npm ci || npm install
-    elif [ -f "pnpm-lock.yaml" ]; then
+    # Install dependencies - prefer pnpm
+    if [ -f "pnpm-lock.yaml" ]; then
+        echo -e "${YELLOW}Installing with pnpm...${NC}"
         pnpm install --frozen-lockfile || pnpm install
+        BUILD_CMD="pnpm build"
+    elif [ -f "package-lock.json" ]; then
+        echo -e "${YELLOW}Installing with npm...${NC}"
+        npm ci || npm install
+        BUILD_CMD="npm run build"
+    elif [ -f "yarn.lock" ]; then
+        echo -e "${YELLOW}Installing with yarn...${NC}"
+        yarn install --frozen-lockfile || yarn install
+        BUILD_CMD="yarn build"
     else
-        yarn install || npm install
+        echo -e "${YELLOW}No lockfile found, using pnpm...${NC}"
+        pnpm install || npm install
+        BUILD_CMD="pnpm build || npm run build"
     fi
     
     # Build
-    yarn build || npm run build || pnpm build
+    echo -e "${YELLOW}Building frontend...${NC}"
+    eval "${BUILD_CMD}"
     
     echo -e "${GREEN}Frontend build completed${NC}"
     cd "${PLUGIN_DIR}"
