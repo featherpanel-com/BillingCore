@@ -59,6 +59,50 @@ jobs:
             exit 1
           fi
 
+      - name: Update conf.yml version
+        id: update_version
+        run: |
+          CONF_FILE="${{ steps.plugin_dir.outputs.CONF_FILE }}"
+
+          # Determine version from release tag, workflow input, or conf.yml
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ] && [ -n "${{ github.event.inputs.version }}" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+          elif [ "${{ github.event_name }}" == "release" ]; then
+            # Extract version from release tag (remove 'v' prefix if present)
+            VERSION="${{ github.event.release.tag_name }}"
+            VERSION="${VERSION#v}"
+          else
+            # Fallback to conf.yml version
+            VERSION=$(grep -E "^\s*version:" "${CONF_FILE}" | sed -E 's/.*version:\s*["'\'']?([^"'\'']+)["'\'']?/\1/' | tr -d ' ')
+          fi
+
+          if [ -z "${VERSION}" ]; then
+            echo "::error::Could not determine version"
+            exit 1
+          fi
+
+          echo "Updating conf.yml version to: ${VERSION}"
+
+          # Update version in conf.yml using sed
+          if [[ "$OSTYPE" == "darwin"* ]]; then
+            # macOS sed requires -i '' with extension
+            sed -i '' "s/^\(\s*version:\s*\)[\"']\?[^\"']*[\"']\?/\1${VERSION}/" "${CONF_FILE}"
+          else
+            # Linux sed
+            sed -i "s/^\(\s*version:\s*\)[\"']\?[^\"']*[\"']\?/\1${VERSION}/" "${CONF_FILE}"
+          fi
+
+          # Verify the update
+          UPDATED_VERSION=$(grep -E "^\s*version:" "${CONF_FILE}" | sed -E 's/.*version:\s*["'\'']?([^"'\'']+)["'\'']?/\1/' | tr -d ' ')
+          if [ "${UPDATED_VERSION}" != "${VERSION}" ]; then
+            echo "::error::Failed to update version in conf.yml"
+            echo "Expected: ${VERSION}, Got: ${UPDATED_VERSION}"
+            exit 1
+          fi
+
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "Successfully updated conf.yml version to ${VERSION}"
+
       - name: Make build script executable
         run: chmod +x ${{ steps.plugin_dir.outputs.PLUGIN_DIR }}/build-release.sh
 
