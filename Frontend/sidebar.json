@@ -1,0 +1,47 @@
+{
+  "client": {
+    "/billing/info": {
+      "name": "Billing Information",
+      "icon": "💳",
+      "showBadge": false,
+      "redirect": "/billing/info",
+      "component": "/billingcore/dist/billing-info.html",
+      "description": "View your billing information and credits",
+      "category": "client",
+      "group": "Billing"
+    },
+    "/billing/invoices": {
+      "name": "My Invoices",
+      "icon": "📄",
+      "showBadge": false,
+      "redirect": "/billing/invoices",
+      "component": "/billingcore/dist/invoices.html",
+      "description": "View and manage your invoices",
+      "category": "client",
+      "group": "Billing"
+    }
+  },
+  "admin": {
+    "/billingcore": {
+      "name": "Billing Core",
+      "icon": "💳",
+      "showBadge": false,
+      "redirect": "/billingcore",
+      "component": "/billingcore/dist/admin.html",
+      "description": "Manage billing, credits, and currency settings",
+      "category": "admin",
+      "group": "Billing"
+    },
+    "/billingcore/invoices": {
+      "name": "Invoice Management",
+      "icon": "📄",
+      "showBadge": false,
+      "redirect": "/billingcore/invoices",
+      "component": "/billingcore/dist/admin-invoices.html",
+      "description": "Create, edit, and manage invoices",
+      "category": "admin",
+      "group": "Billing"
+    }
+  },
+  "server": {}
+}

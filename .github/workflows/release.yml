@@ -1,0 +1,217 @@
+name: Build and Release Plugin
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Plugin version (e.g., 1.0.0)"
+        required: true
+        type: string
+      package_id:
+        description: "Package ID from cloud API (31)"
+        required: true
+        type: string
+      changelog:
+        description: "Changelog text"
+        required: false
+        type: string
+        default: "Release"
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "yarn"
+          cache-dependency-path: Frontend/App/yarn.lock
+
+      - name: Setup Yarn
+        run: corepack enable && corepack prepare yarn@stable --activate
+
+      - name: Make build script executable
+        run: chmod +x build-release.sh
+
+      - name: Build plugin
+        id: build
+        run: ./build-release.sh
+        working-directory: backend/storage/addons/billingcore
+
+      - name: Install zip utility
+        run: sudo apt-get update && sudo apt-get install -y zip
+
+      - name: Extract plugin metadata
+        id: metadata
+        run: |
+          # Read conf.yml
+          CONF_FILE="backend/storage/addons/billingcore/conf.yml"
+
+          # Extract version (use workflow input if provided, otherwise from conf.yml or tag)
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+          elif [ "${{ github.event_name }}" == "release" ]; then
+            # Try to extract version from release tag (remove 'v' prefix if present)
+            VERSION="${{ github.event.release.tag_name }}"
+            VERSION="${VERSION#v}"
+          else
+            VERSION=$(grep -E "^\s*version:" "${CONF_FILE}" | sed -E 's/.*version:\s*["'\'']?([^"'\'']+)["'\'']?/\1/' | tr -d ' ')
+          fi
+
+          IDENTIFIER=$(grep -E "^\s*identifier:" "${CONF_FILE}" | sed -E 's/.*identifier:\s*["'\'']?([^"'\'']+)["'\'']?/\1/' | tr -d ' ')
+
+          # Extract dependencies array - handle YAML array format
+          DEP_JSON="["
+          FIRST=true
+          IN_DEPS=false
+          while IFS= read -r line; do
+            # Check if we're in dependencies section
+            if [[ "$line" =~ ^[[:space:]]*dependencies:[[:space:]]*$ ]] || [[ "$line" =~ ^[[:space:]]*dependencies:[[:space:]]*\{[[:space:]]*$ ]]; then
+              IN_DEPS=true
+              continue
+            fi
+            
+            # Stop if we hit the next top-level key
+            if [ "$IN_DEPS" = true ] && [[ "$line" =~ ^[[:space:]]*[a-zA-Z_]+:[[:space:]]* ]] && ! [[ "$line" =~ ^[[:space:]]+- ]]; then
+              IN_DEPS=false
+            fi
+            
+            # Extract dependency entries (only plugin dependencies for API)
+            if [ "$IN_DEPS" = true ] && [[ "$line" =~ ^[[:space:]]+-[[:space:]]*(.+) ]]; then
+              DEP="${BASH_REMATCH[1]}"
+              # Remove quotes if present
+              DEP=$(echo "$DEP" | sed -E "s/^['\"]|['\"]$//g")
+              # Only include plugin dependencies (format: plugin=identifier)
+              if [[ "$DEP" =~ ^plugin= ]]; then
+                if [ "$FIRST" = true ]; then
+                  FIRST=false
+                else
+                  DEP_JSON="${DEP_JSON},"
+                fi
+                DEP_JSON="${DEP_JSON}\"${DEP}\""
+              fi
+            fi
+          done < "${CONF_FILE}"
+          DEP_JSON="${DEP_JSON}]"
+
+          # If no dependencies found, use empty array
+          if [ "$DEP_JSON" = "[]" ] || [ "$FIRST" = true ]; then
+            DEP_JSON="[]"
+          fi
+
+          # Extract target version (min/max panel version)
+          TARGET=$(grep -E "^\s*target:" "${CONF_FILE}" | sed -E 's/.*target:\s*["'\'']?([^"'\'']+)["'\'']?/\1/' | tr -d ' ')
+
+          # Parse target version (e.g., v2 -> 2.0.0)
+          if [[ "${TARGET}" =~ ^v?([0-9]+) ]]; then
+            MAJOR_VERSION="${BASH_REMATCH[1]}"
+            MIN_PANEL_VERSION="${MAJOR_VERSION}.0.0"
+            MAX_PANEL_VERSION="$((MAJOR_VERSION + 1)).0.0"
+          else
+            MIN_PANEL_VERSION="1.0.0"
+            MAX_PANEL_VERSION="2.0.0"
+          fi
+
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "identifier=${IDENTIFIER}" >> $GITHUB_OUTPUT
+          echo "dependencies=${DEP_JSON}" >> $GITHUB_OUTPUT
+          echo "min_panel_version=${MIN_PANEL_VERSION}" >> $GITHUB_OUTPUT
+          echo "max_panel_version=${MAX_PANEL_VERSION}" >> $GITHUB_OUTPUT
+
+          # Get package ID (from workflow input or default)
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            PACKAGE_ID="${{ github.event.inputs.package_id }}"
+          else
+            # Default package ID for billingcore (update this if needed)
+            PACKAGE_ID="31"
+          fi
+          echo "package_id=${PACKAGE_ID}" >> $GITHUB_OUTPUT
+
+          # Get changelog
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            CHANGELOG="${{ github.event.inputs.changelog }}"
+          elif [ "${{ github.event_name }}" == "release" ]; then
+            CHANGELOG="${{ github.event.release.body }}"
+            if [ -z "${CHANGELOG}" ] || [ "${CHANGELOG}" = "null" ]; then
+              CHANGELOG="Release ${VERSION}"
+            fi
+          else
+            CHANGELOG="Release ${VERSION}"
+          fi
+          echo "changelog<<EOF" >> $GITHUB_OUTPUT
+          echo "${CHANGELOG}" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Upload to Cloud API
+        env:
+          TEAM_UUID: ${{ secrets.CLOUD_TEAM_UUID }}
+          API_TOKEN: ${{ secrets.CLOUD_API_TOKEN }}
+        run: |
+          if [ -z "${TEAM_UUID}" ] || [ -z "${API_TOKEN}" ]; then
+            echo "::warning::Cloud API credentials not set. Skipping upload."
+            echo "Set CLOUD_TEAM_UUID and CLOUD_API_TOKEN secrets to enable automatic upload."
+            exit 0
+          fi
+
+          EXPORT_FILE="backend/storage/addons/billingcore/${{ steps.metadata.outputs.identifier }}-${{ steps.metadata.outputs.version }}.fpa"
+
+          if [ ! -f "${EXPORT_FILE}" ]; then
+            echo "::error::Export file not found: ${EXPORT_FILE}"
+            exit 1
+          fi
+
+          echo "Uploading ${EXPORT_FILE} to cloud API..."
+
+          # Get changelog (replace newlines with spaces for form data)
+          CHANGELOG_TEXT="${{ steps.metadata.outputs.changelog }}"
+          CHANGELOG_TEXT=$(echo "${CHANGELOG_TEXT}" | tr '\n' ' ' | sed 's/  */ /g')
+
+          # Upload using curl with multipart form data
+          RESPONSE=$(curl -s -w "\n%{http_code}" -X POST \
+            "https://cloud.mythical.systems/api/user/packages/${{ steps.metadata.outputs.package_id }}/versions" \
+            -H "accept: application/json, text/plain, */*" \
+            -H "Cookie: remember_token=${API_TOKEN}" \
+            -H "x-team-uuid: ${TEAM_UUID}" \
+            -F "file=@${EXPORT_FILE}" \
+            -F "version=${{ steps.metadata.outputs.version }}" \
+            -F "changelog=${CHANGELOG_TEXT}" \
+            -F "dependencies=${{ steps.metadata.outputs.dependencies }}" \
+            -F "min_panel_version=${{ steps.metadata.outputs.min_panel_version }}" \
+            -F "max_panel_version=${{ steps.metadata.outputs.max_panel_version }}" \
+            -F "team_uuid=${TEAM_UUID}")
+
+          HTTP_CODE=$(echo "${RESPONSE}" | tail -n1)
+          BODY=$(echo "${RESPONSE}" | sed '$d')
+
+          if [ "${HTTP_CODE}" -ge 200 ] && [ "${HTTP_CODE}" -lt 300 ]; then
+            echo "::notice::Plugin uploaded successfully! (HTTP ${HTTP_CODE})"
+            echo "Response: ${BODY}"
+          else
+            echo "::error::Failed to upload plugin (HTTP ${HTTP_CODE})"
+            echo "Response: ${BODY}"
+            exit 1
+          fi
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: plugin-release
+          path: backend/storage/addons/billingcore/*.fpa
+          retention-days: 30
+
+      - name: Create GitHub Release Asset
+        if: github.event_name == 'release'
+        uses: softprops/action-gh-release@v1
+        with:
+          files: backend/storage/addons/billingcore/*.fpa
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

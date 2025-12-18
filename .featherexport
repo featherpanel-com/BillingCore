@@ -1,0 +1,24 @@
+# FeatherPanel Export Ignore File
+# This file specifies files and folders to exclude when exporting the plugin
+# Supports glob patterns similar to .gitignore
+
+# Example: Exclude development files
+# *.log
+# *.tmp
+# .env
+
+# Example: Exclude directories
+# node_modules/
+# .git/
+# vendor/
+
+# Example: Exclude specific files
+# README.md
+# .gitignore
+
+# Add your exclusion patterns below:
+*/node_modules/*
+/demo/*
+banner.png 
+README.md
+*/App/*
