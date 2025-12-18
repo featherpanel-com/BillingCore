@@ -9,7 +9,7 @@ on:
         description: "Plugin version (e.g., 1.0.0)"
         required: false
         type: string
-        default: "1.0."
+        default: "1.1."
       changelog:
         description: "Changelog text"
         required: false
