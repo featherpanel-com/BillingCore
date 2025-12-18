@@ -258,14 +258,15 @@ jobs:
           CHANGELOG_TEXT=$(echo "${CHANGELOG_TEXT}" | tr '\n' ' ' | sed 's/  */ /g')
 
           # Upload using curl with multipart form data
+          # WAF rule: (http.cookie contains "ghagent") or (http.referer wildcard r"https://github.com/*")
+          # Include both cookie and referer to match the rule
           RESPONSE=$(curl -s -w "\n%{http_code}" -X POST \
             "https://cloud.mythical.systems/api/user/packages/${{ steps.metadata.outputs.package_id }}/versions" \
             -H "accept: application/json, text/plain, */*" \
             -H "User-Agent: GitHub Runner" \
-            -H "Cookie: ghagent=1; remember_token=${API_TOKEN}" \
-            -H "x-team-uuid: ${TEAM_UUID}" \
+            -H "Cookie: remember_token=${API_TOKEN}; ghagent=1" \
             -H "Referer: https://github.com/${{ github.repository }}" \
-            -H "Origin: https://github.com" \
+            -H "x-team-uuid: ${TEAM_UUID}" \
             -F "file=@${EXPORT_FILE}" \
             -F "version=${{ steps.metadata.outputs.version }}" \
             -F "changelog=${CHANGELOG_TEXT}" \
