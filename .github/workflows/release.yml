@@ -217,35 +217,6 @@ jobs:
           echo "${CHANGELOG}" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
 
-      - name: Disable Cloudflare Bot Management Fight Mode
-        env:
-          CF_ZONE_ID: ${{ secrets.CF_ZONE_ID }}
-          CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
-        run: |
-          if [ -z "${CF_ZONE_ID}" ] || [ -z "${CF_API_TOKEN}" ]; then
-            echo "::warning::Cloudflare credentials not set. Skipping Bot Fight Mode toggle."
-            exit 0
-          fi
-
-          echo "Disabling Cloudflare Bot Management Fight Mode..."
-          # Use the Bot Management endpoint (not bot_fight_mode settings)
-          RESPONSE=$(curl -s -X PUT \
-            "https://api.cloudflare.com/client/v4/zones/${CF_ZONE_ID}/bot_management" \
-            -H "Authorization: Bearer ${CF_API_TOKEN}" \
-            -H "Content-Type: application/json" \
-            --data '{"fight_mode":false}')
-          
-          if echo "${RESPONSE}" | grep -q '"success":true'; then
-            echo "Bot Management Fight Mode disabled successfully"
-          else
-            echo "::warning::Failed to disable Bot Management Fight Mode: ${RESPONSE}"
-            echo "::warning::Error code 9109 means API token lacks permissions"
-            echo "::warning::Continuing anyway - upload may work if WAF rules allow it"
-          fi
-          
-          echo "Waiting 5 seconds for Bot Management Fight Mode to fully disable..."
-          sleep 5
-
       - name: Upload to Cloud API
         env:
           TEAM_UUID: ${{ secrets.CLOUD_TEAM_UUID }}
@@ -295,7 +266,7 @@ jobs:
 
           # Upload using curl with multipart form data
           RESPONSE=$(curl -s -w "\n%{http_code}" -X POST \
-            "https://cloud.mythical.systems/api/user/packages/${{ steps.metadata.outputs.package_id }}/versions" \
+            "https://cloudrelay.mythicalsystems.xyz/api/user/packages/${{ steps.metadata.outputs.package_id }}/versions" \
             -H "accept: application/json, text/plain, */*" \
             -H "User-Agent: GitHub Runner" \
             -H "Cookie: remember_token=${API_TOKEN}; ghagent=1" \
@@ -323,31 +294,6 @@ jobs:
             echo "::error::Failed to upload plugin (HTTP ${HTTP_CODE})"
             echo "Response: ${BODY}"
             exit 1
-          fi
-
-      - name: Re-enable Cloudflare Bot Management Fight Mode
-        if: always()
-        env:
-          CF_ZONE_ID: ${{ secrets.CF_ZONE_ID }}
-          CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
-        run: |
-          if [ -z "${CF_ZONE_ID}" ] || [ -z "${CF_API_TOKEN}" ]; then
-            echo "::warning::Cloudflare credentials not set. Skipping Bot Fight Mode toggle."
-            exit 0
-          fi
-
-          echo "Re-enabling Cloudflare Bot Management Fight Mode..."
-          # Use the Bot Management endpoint (not bot_fight_mode settings)
-          RESPONSE=$(curl -s -X PUT \
-            "https://api.cloudflare.com/client/v4/zones/${CF_ZONE_ID}/bot_management" \
-            -H "Authorization: Bearer ${CF_API_TOKEN}" \
-            -H "Content-Type: application/json" \
-            --data '{"fight_mode":true}')
-          
-          if echo "${RESPONSE}" | grep -q '"success":true'; then
-            echo "Bot Management Fight Mode re-enabled successfully"
-          else
-            echo "::warning::Failed to re-enable Bot Management Fight Mode: ${RESPONSE}"
           fi
 
       - name: Upload artifact
