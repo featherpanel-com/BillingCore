@@ -109,17 +109,28 @@ echo -e "${YELLOW}Creating .fpa archive...${NC}"
 cd "${PLUGIN_DIR}"
 
 # Build zip command with exclusions
-ZIP_CMD="zip -r -P ${PASSWORD} ${EXPORT_FILE} ."
-
+# Match the approach from PluginsController::export()
+# Use * instead of . to avoid including the current directory itself
 if [ ${#EXCLUSIONS[@]} -gt 0 ]; then
-    EXCLUSION_ARGS=""
+    echo -e "${YELLOW}Excluding ${#EXCLUSIONS[@]} pattern(s) from .featherexport:${NC}"
     for pattern in "${EXCLUSIONS[@]}"; do
-        EXCLUSION_ARGS="${EXCLUSION_ARGS} -x ${pattern}"
+        echo -e "  - ${pattern}"
     done
-    ZIP_CMD="zip -r -P ${PASSWORD} ${EXPORT_FILE} . ${EXCLUSION_ARGS}"
+    
+    # Build exclusion arguments array
+    EXCLUSION_ARGS=()
+    for pattern in "${EXCLUSIONS[@]}"; do
+        # Remove leading slash if present (zip patterns are relative to current dir)
+        PATTERN=$(echo "$pattern" | sed 's|^/||')
+        EXCLUSION_ARGS+=("-x" "$PATTERN")
+    done
+    
+    # Run zip with exclusions
+    zip -r -P "${PASSWORD}" "${EXPORT_FILE}" * "${EXCLUSION_ARGS[@]}"
+else
+    # No exclusions, simple zip
+    zip -r -P "${PASSWORD}" "${EXPORT_FILE}" *
 fi
-
-eval "${ZIP_CMD}"
 
 if [ ! -f "${EXPORT_FILE}" ]; then
     echo -e "${RED}Error: Failed to create .fpa file${NC}"
