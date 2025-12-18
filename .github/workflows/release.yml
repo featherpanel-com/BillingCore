@@ -220,9 +220,8 @@ jobs:
             echo "::error::Invalid JSON format before output: ${DEP_JSON}"
             exit 1
           fi
-          echo "dependencies<<EOF" >> $GITHUB_OUTPUT
-          echo "${DEP_JSON}" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
+          # Use printf to ensure exact string is written without shell interpretation
+          printf "dependencies<<EOF\n%s\nEOF\n" "${DEP_JSON}" >> $GITHUB_OUTPUT
           echo "min_panel_version=${MIN_PANEL_VERSION}" >> $GITHUB_OUTPUT
           echo "max_panel_version=${MAX_PANEL_VERSION}" >> $GITHUB_OUTPUT
 
@@ -300,9 +299,20 @@ jobs:
           # Get dependencies JSON (should be a valid JSON array string like ["php=8.5","php-ext=pdo"])
           DEPENDENCIES_JSON="${{ steps.metadata.outputs.dependencies }}"
 
-          # Debug: Show what we're sending and validate
-          echo "Dependencies JSON being sent: ${DEPENDENCIES_JSON}"
+          # Debug: Show what we're receiving from GitHub Actions output
+          echo "Dependencies JSON received from output: ${DEPENDENCIES_JSON}"
           echo "Length: ${#DEPENDENCIES_JSON}"
+          echo "Hex dump of received value:"
+          echo -n "${DEPENDENCIES_JSON}" | od -c | head -3
+
+          # If quotes are missing, rebuild the JSON properly
+          if [[ ! "${DEPENDENCIES_JSON}" =~ \".*\" ]]; then
+            echo "::warning::Quotes appear to be missing, rebuilding JSON from array format"
+            # Extract dependencies from the malformed string [php=8.5,php-ext=pdo]
+            # Remove brackets, split by comma, add quotes, rejoin
+            DEPENDENCIES_JSON=$(echo "${DEPENDENCIES_JSON}" | sed 's/^\[//;s/\]$//' | tr ',' '\n' | sed 's/^/"/;s/$/"/' | tr '\n' ',' | sed 's/,$//' | sed 's/^/[/;s/$/]/')
+            echo "Rebuilt JSON: ${DEPENDENCIES_JSON}"
+          fi
 
           # Validate it's proper JSON before sending
           if ! echo "${DEPENDENCIES_JSON}" | python3 -m json.tool > /dev/null 2>&1; then
