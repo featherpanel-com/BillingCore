@@ -243,7 +243,7 @@ jobs:
           echo "${DEP_JSON}" | python3 -m json.tool > /dev/null 2>&1 && echo "✓ Valid JSON" || echo "✗ Invalid JSON format"
 
           # Package ID is always 31 for billingcore
-          PACKAGE_ID="30"
+          PACKAGE_ID="33"
           echo "package_id=${PACKAGE_ID}" >> $GITHUB_OUTPUT
 
           # Get changelog
