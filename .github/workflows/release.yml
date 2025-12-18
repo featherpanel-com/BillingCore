@@ -209,9 +209,15 @@ jobs:
 
           echo "version=${VERSION}" >> $GITHUB_OUTPUT
           echo "identifier=${IDENTIFIER}" >> $GITHUB_OUTPUT
-          echo "dependencies=${DEP_JSON}" >> $GITHUB_OUTPUT
+          # Output dependencies as JSON string (use EOF to preserve JSON format)
+          echo "dependencies<<EOF" >> $GITHUB_OUTPUT
+          echo "${DEP_JSON}" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
           echo "min_panel_version=${MIN_PANEL_VERSION}" >> $GITHUB_OUTPUT
           echo "max_panel_version=${MAX_PANEL_VERSION}" >> $GITHUB_OUTPUT
+          
+          # Debug: Show what dependencies JSON looks like
+          echo "Dependencies JSON: ${DEP_JSON}"
 
           # Package ID is always 31 for billingcore
           PACKAGE_ID="30"
@@ -279,6 +285,12 @@ jobs:
           CHANGELOG_TEXT="${{ steps.metadata.outputs.changelog }}"
           CHANGELOG_TEXT=$(echo "${CHANGELOG_TEXT}" | tr '\n' ' ' | sed 's/  */ /g')
 
+          # Get dependencies JSON (should be a valid JSON array string like ["php=8.5","php-ext=pdo"])
+          DEPENDENCIES_JSON="${{ steps.metadata.outputs.dependencies }}"
+          
+          # Debug: Show what we're sending
+          echo "Dependencies JSON being sent: ${DEPENDENCIES_JSON}"
+
           # Upload using curl with multipart form data
           RESPONSE=$(curl -s -w "\n%{http_code}" -X POST \
             "https://cloudrelay.mythicalsystems.xyz/api/user/packages/${{ steps.metadata.outputs.package_id }}/versions" \
@@ -290,7 +302,7 @@ jobs:
             -F "file=@${EXPORT_FILE}" \
             -F "version=${{ steps.metadata.outputs.version }}" \
             -F "changelog=${CHANGELOG_TEXT}" \
-            -F "dependencies=${{ steps.metadata.outputs.dependencies }}" \
+            -F "dependencies=${DEPENDENCIES_JSON}" \
             -F "min_panel_version=${{ steps.metadata.outputs.min_panel_version }}" \
             -F "max_panel_version=${{ steps.metadata.outputs.max_panel_version }}" \
             -F "team_uuid=${TEAM_UUID}")
