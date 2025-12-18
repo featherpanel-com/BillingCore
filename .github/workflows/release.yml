@@ -9,11 +9,22 @@ on:
         description: "Plugin version (e.g., 1.0.0)"
         required: false
         type: string
+        default: "1.0."
       changelog:
         description: "Changelog text"
         required: false
         type: string
         default: "Release"
+      min_panel_version:
+        description: "Minimum panel version (default: 1.1.2)"
+        required: false
+        type: string
+        default: "1.1.2"
+      max_panel_version:
+        description: "Maximum panel version (default: 2.0.0)"
+        required: false
+        type: string
+        default: "2.0.0"
 
 jobs:
   build-and-release:
@@ -156,13 +167,13 @@ jobs:
               IN_DEPS=false
             fi
             
-            # Extract dependency entries (only plugin dependencies for API)
+            # Extract dependency entries (all dependencies: php, php-ext, composer, plugin)
             if [ "$IN_DEPS" = true ] && [[ "$line" =~ ^[[:space:]]+-[[:space:]]*(.+) ]]; then
               DEP="${BASH_REMATCH[1]}"
               # Remove quotes if present
               DEP=$(echo "$DEP" | sed -E "s/^['\"]|['\"]$//g")
-              # Only include plugin dependencies (format: plugin=identifier)
-              if [[ "$DEP" =~ ^plugin= ]]; then
+              # Include all dependencies (php=, php-ext=, composer=, plugin=)
+              if [[ "$DEP" =~ ^(php|php-ext|composer|plugin)= ]]; then
                 if [ "$FIRST" = true ]; then
                   FIRST=false
                 else
@@ -179,18 +190,22 @@ jobs:
             DEP_JSON="[]"
           fi
 
-          # Extract target version (min/max panel version)
-          TARGET=$(grep -E "^\s*target:" "${CONF_FILE}" | sed -E 's/.*target:\s*["'\'']?([^"'\'']+)["'\'']?/\1/' | tr -d ' ')
+          # Get min/max panel version from workflow input or use defaults
+          MIN_PANEL_VERSION="1.1.2"  # Default
+          MAX_PANEL_VERSION="2.0.0"  # Default
 
-          # Parse target version (e.g., v2 -> 2.0.0)
-          if [[ "${TARGET}" =~ ^v?([0-9]+) ]]; then
-            MAJOR_VERSION="${BASH_REMATCH[1]}"
-            MIN_PANEL_VERSION="${MAJOR_VERSION}.0.0"
-            MAX_PANEL_VERSION="$((MAJOR_VERSION + 1)).0.0"
-          else
-            MIN_PANEL_VERSION="1.0.0"
-            MAX_PANEL_VERSION="2.0.0"
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            # Use workflow inputs if provided
+            if [ -n "${{ github.event.inputs.min_panel_version }}" ] && [ "${{ github.event.inputs.min_panel_version }}" != "null" ]; then
+              MIN_PANEL_VERSION="${{ github.event.inputs.min_panel_version }}"
+            fi
+            if [ -n "${{ github.event.inputs.max_panel_version }}" ] && [ "${{ github.event.inputs.max_panel_version }}" != "null" ]; then
+              MAX_PANEL_VERSION="${{ github.event.inputs.max_panel_version }}"
+            fi
           fi
+
+          echo "Using min_panel_version: ${MIN_PANEL_VERSION}"
+          echo "Using max_panel_version: ${MAX_PANEL_VERSION}"
 
           echo "version=${VERSION}" >> $GITHUB_OUTPUT
           echo "identifier=${IDENTIFIER}" >> $GITHUB_OUTPUT
