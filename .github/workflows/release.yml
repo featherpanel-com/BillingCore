@@ -177,12 +177,35 @@ jobs:
             exit 0
           fi
 
-          EXPORT_FILE="${{ steps.plugin_dir.outputs.PLUGIN_DIR }}/${{ steps.metadata.outputs.identifier }}-${{ steps.metadata.outputs.version }}.fpa"
+          # Find the .fpa file created by the build script
+          PLUGIN_DIR="${{ steps.plugin_dir.outputs.PLUGIN_DIR }}"
 
-          if [ ! -f "${EXPORT_FILE}" ]; then
-            echo "::error::Export file not found: ${EXPORT_FILE}"
+          # Try to use build step output first
+          if [ -n "${{ steps.build.outputs.export_file }}" ]; then
+            EXPORT_FILE_RELATIVE="${{ steps.build.outputs.export_file }}"
+            if [ "${PLUGIN_DIR}" = "." ]; then
+              EXPORT_FILE="${EXPORT_FILE_RELATIVE}"
+            else
+              EXPORT_FILE="${PLUGIN_DIR}/${EXPORT_FILE_RELATIVE}"
+            fi
+          else
+            # Fallback: find the .fpa file
+            EXPORT_FILE=$(find "${PLUGIN_DIR}" -maxdepth 1 -name "*.fpa" -type f | head -n1)
+            if [ -z "${EXPORT_FILE}" ]; then
+              EXPORT_FILE=$(find . -name "*.fpa" -type f | head -n1)
+            fi
+          fi
+
+          if [ -z "${EXPORT_FILE}" ] || [ ! -f "${EXPORT_FILE}" ]; then
+            echo "::error::Export file not found"
+            echo "Plugin dir: ${PLUGIN_DIR}"
+            echo "Build output: ${{ steps.build.outputs.export_file }}"
+            echo "Looking for .fpa files:"
+            ls -la "${PLUGIN_DIR}"/*.fpa 2>/dev/null || find . -name "*.fpa" -type f 2>/dev/null || echo "No .fpa files found"
             exit 1
           fi
+
+          echo "Using export file: ${EXPORT_FILE}"
 
           echo "Uploading ${EXPORT_FILE} to cloud API..."
 
