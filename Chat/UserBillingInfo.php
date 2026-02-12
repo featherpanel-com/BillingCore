@@ -118,7 +118,15 @@ class UserBillingInfo
                 return $stmt->execute($payload);
             }
 
-            // Update
+            // Update: preserve existing values for NOT NULL columns when incoming value is null/empty
+            $notNullColumns = ['full_name', 'address_line1', 'city', 'postal_code', 'country_code'];
+            foreach ($notNullColumns as $col) {
+                $isEmpty = !isset($payload[$col]) || $payload[$col] === '' || $payload[$col] === null;
+                if ($isEmpty && isset($existing[$col])) {
+                    $payload[$col] = $existing[$col];
+                }
+            }
+
             $fields = array_keys($payload);
             $setClause = implode(', ', array_map(static fn (string $f): string => $f . ' = :' . $f, $fields));
             $sql = 'UPDATE ' . self::$table . ' SET ' . $setClause . ' WHERE user_id = :user_id';

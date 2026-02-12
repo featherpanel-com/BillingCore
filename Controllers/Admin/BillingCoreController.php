@@ -150,6 +150,7 @@ class BillingCoreController
         $creditsMode = CurrencyHelper::getCreditsMode();
 
         return ApiResponse::success([
+            'id' => $userId,
             'user_id' => $userId,
             'username' => $user['username'],
             'email' => $user['email'],
