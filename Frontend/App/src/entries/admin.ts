@@ -15,5 +15,12 @@ app.use(Toast, {
 // Enable dark mode by default
 document.documentElement.classList.add("dark");
 
+// Remove all backgrounds
+document.body.style.background = "transparent";
+document.documentElement.style.background = "transparent";
+if (document.body.parentElement) {
+  document.body.parentElement.style.background = "transparent";
+}
+
 app.mount("#app");
 
