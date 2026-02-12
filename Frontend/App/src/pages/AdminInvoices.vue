@@ -512,7 +512,7 @@ onUnmounted(() => {
           >
         </div>
       </Card>
-
+    <br></br>
       <!-- Invoices List -->
       <Card>
         <div class="p-6">
