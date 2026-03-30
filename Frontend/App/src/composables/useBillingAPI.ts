@@ -130,6 +130,7 @@ export interface UserWithCredits extends User {
     name: string;
     symbol: string;
   };
+  credits_mode?: string;
 }
 
 export interface Currency {

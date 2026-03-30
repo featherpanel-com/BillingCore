@@ -1,0 +1,25 @@
+[
+	{
+		"id": "billingcore-admin-user-billing-overview",
+		"component": "billingcore/dist/admin-user-billing-widget.html",
+		"enabled": true,
+		"priority": 80,
+		"page": "admin-users-edit",
+		"location": "bottom-of-page",
+		"pluginName": "Billing Core",
+		"title": "Billing & resources",
+		"description": "Credits, full billing profile, and invoice history for this user (Billing Core).",
+		"icon": "BC",
+		"size": "full",
+		"card": {
+			"enabled": true,
+			"padding": "none",
+			"header": {
+				"show": true
+			}
+		},
+		"iframe": {
+			"minHeight": "1299px"
+		}
+	}
+]

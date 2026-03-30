@@ -20,6 +20,7 @@ export default defineConfig({
         invoices: "./invoices.html",
         admin: "./admin.html",
         "admin-invoices": "./admin-invoices.html",
+        "admin-user-billing-widget": "./admin-user-billing-widget.html",
       },
     },
   },
