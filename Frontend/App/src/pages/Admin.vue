@@ -240,31 +240,23 @@ const saveCurrencySettings = async () => {
   if (!billingCoreSettings.value || !currencySettings.value) return;
   savingSettings.value = true;
   try {
-    const creditsModeSelect = document.getElementById(
-      "credits-mode-select"
-    ) as HTMLSelectElement;
-    const currencySelect = document.getElementById(
-      "default-currency-select"
-    ) as HTMLSelectElement;
-
-    if (!creditsModeSelect || !currencySelect) return;
-
     // Prepare settings update
     const settingsUpdate: any = {
-      credits_mode: creditsModeSelect.value as "currency" | "token",
+      credits_mode: billingCoreSettings.value.credits_mode,
     };
 
     // Only include tokens_per_currency if in token mode
-    if (creditsModeSelect.value === "token") {
-      if (tokensPerCurrency.value && tokensPerCurrency.value.trim()) {
-        settingsUpdate.tokens_per_currency = tokensPerCurrency.value.trim();
+    if (billingCoreSettings.value.credits_mode === "token") {
+      const tokenValue = String(tokensPerCurrency.value || "").trim();
+      if (tokenValue) {
+        settingsUpdate.tokens_per_currency = tokenValue;
       }
     }
 
     // Save both settings
     await Promise.all([
       updateSettings(settingsUpdate),
-      updateCurrencySettings(currencySelect.value),
+      updateCurrencySettings(currencySettings.value.default_currency.code),
     ]);
 
     toast.success("Currency settings saved!");
@@ -570,33 +562,10 @@ onMounted(() => {
                 >
                   <div>
                     <Label for="credits-mode-select">Credits Mode</Label>
-                    <select
-                      id="credits-mode-select"
-                      class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 mt-2"
-                    >
-                      <option
-                        value="currency"
-                        :selected="
-                          billingCoreSettings.credits_mode === 'currency'
-                        "
-                      >
-                        Currency (for paid hosting)
-                      </option>
-                      <option
-                        value="token"
-                        :selected="billingCoreSettings.credits_mode === 'token'"
-                      >
-                        Token (for freemium hosting)
-                      </option>
+                    <select id="credits-mode-select" v-model="billingCoreSettings.credits_mode" class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 mt-2">
+                      <option value="currency">Currency (for paid hosting)</option>
+                      <option value="token">Token (for freemium hosting)</option>
                     </select>
-                    <p class="text-sm text-muted-foreground mt-2">
-                      <strong>Currency mode:</strong> Credits are treated as a
-                      currency (e.g., EUR, USD) for paid hosting services.
-                      <br />
-                      <strong>Token mode:</strong> Credits are treated as
-                      tokens/points for freemium hosting models where users can
-                      earn or purchase tokens.
-                    </p>
                   </div>
 
                   <div v-if="billingCoreSettings.credits_mode === 'token'">
@@ -625,16 +594,13 @@ onMounted(() => {
                     >
                     <select
                       id="default-currency-select"
+                      v-model="currencySettings.default_currency.code"
                       class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 mt-2"
                     >
                       <option
                         v-for="currency in currencySettings.available_currencies"
                         :key="currency.code"
                         :value="currency.code"
-                        :selected="
-                          currency.code ===
-                          currencySettings.default_currency.code
-                        "
                       >
                         {{ currency.name }} ({{ currency.code }}) -
                         {{ currency.symbol }}
