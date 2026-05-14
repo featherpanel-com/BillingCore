@@ -1,2 +1,4 @@
 allowBuilds:
-  vue-demi: set this to true or false
+  vue-demi: true
+overrides:
+  vite: "npm:rolldown-vite@7.3.1"
