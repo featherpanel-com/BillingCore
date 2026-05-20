@@ -14,7 +14,7 @@
     "axios": "^1.16.1",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
-    "js-cookie": "^3.0.5",
+    "js-cookie": "^3.0.7",
     "lucide-vue-next": "^1.0.0",
     "reka-ui": "^2.9.7",
     "tailwind-merge": "^3.6.0",
@@ -25,11 +25,11 @@
     "vue-toastification": "2.0.0-rc.5"
   },
   "devDependencies": {
-    "@types/node": "^25.8.0",
-    "@vitejs/plugin-vue": "^6.0.6",
+    "@types/node": "^25.9.1",
+    "@vitejs/plugin-vue": "^6.0.7",
     "@vue/tsconfig": "^0.9.1",
     "typescript": "~6.0.3",
     "vite": "npm:rolldown-vite@7.3.1",
-    "vue-tsc": "^3.2.9"
+    "vue-tsc": "^3.3.1"
   }
 }
