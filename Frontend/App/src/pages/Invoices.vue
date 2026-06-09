@@ -11,13 +11,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import {
   Loader2,
   Eye,
   ChevronLeft,
@@ -29,6 +22,7 @@ import {
   DollarSign,
   Download,
   MoreVertical,
+  ArrowLeft,
 } from "lucide-vue-next";
 import {
   DropdownMenu,
@@ -38,8 +32,10 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useBillingAPI, type Invoice } from "@/composables/useBillingAPI";
 import { useToast } from "vue-toastification";
+import { usePanelTimezone } from "@/composables/usePanelTimezone";
 
 const toast = useToast();
+const { formatDate, formatDateTime } = usePanelTimezone();
 const { loading, getInvoices, getInvoice } = useBillingAPI();
 
 const invoices = ref<Invoice[]>([]);
@@ -47,7 +43,8 @@ const currentPage = ref(1);
 const totalPages = ref(1);
 const statusFilter = ref<string>("all");
 const selectedInvoice = ref<Invoice | null>(null);
-const invoiceDialogOpen = ref(false);
+type PageView = "list" | "view";
+const currentView = ref<PageView>("list");
 const loadingInvoice = ref(false);
 
 const getStatusBadgeVariant = (status: string) => {
@@ -82,29 +79,25 @@ const loadInvoices = async (page: number = 1) => {
 
 const viewInvoice = async (invoiceId: number) => {
   loadingInvoice.value = true;
-  invoiceDialogOpen.value = true;
+  currentView.value = "view";
   try {
     selectedInvoice.value = await getInvoice(invoiceId);
   } catch (err) {
     toast.error(err instanceof Error ? err.message : "Failed to load invoice");
-    invoiceDialogOpen.value = false;
+    currentView.value = "list";
   } finally {
     loadingInvoice.value = false;
   }
 };
 
-const formatDate = (dateString: string | null) => {
-  if (!dateString) return "N/A";
-  return new Date(dateString).toLocaleDateString();
+const goBackToList = () => {
+  currentView.value = "list";
+  selectedInvoice.value = null;
 };
 
 const formatDateFull = (dateString: string | null) => {
   if (!dateString) return "N/A";
-  return new Date(dateString).toLocaleDateString("en-US", {
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-  });
+  return formatDateTime(dateString);
 };
 
 const downloadInvoice = async (invoice: Invoice) => {
@@ -454,6 +447,9 @@ onMounted(() => {
 <template>
   <div class="min-h-screen p-4 md:p-8">
     <div class="max-w-5xl mx-auto space-y-8">
+
+      <!-- LIST -->
+      <template v-if="currentView === 'list'">
       <!-- Header Section -->
       <div class="text-center space-y-4">
         <div class="flex items-center justify-center gap-3">
@@ -630,144 +626,262 @@ onMounted(() => {
           </div>
         </div>
       </Card>
+      </template>
 
-      <!-- Invoice Details Dialog -->
-      <Dialog v-model:open="invoiceDialogOpen">
-        <DialogContent class="max-w-4xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <div class="flex items-center justify-between">
-              <div>
-                <DialogTitle>
-                  Invoice: {{ selectedInvoice?.invoice_number }}
-                </DialogTitle>
-                <DialogDescription>
-                  Invoice details and items
-                </DialogDescription>
-              </div>
-              <Button
-                v-if="selectedInvoice"
-                @click="downloadInvoice(selectedInvoice)"
-                variant="outline"
-                size="sm"
-                class="gap-2"
-              >
-                <Download class="h-4 w-4" />
-                Download
-              </Button>
-            </div>
-          </DialogHeader>
-
-          <div
-            v-if="loadingInvoice"
-            class="flex items-center justify-center py-12"
-          >
-            <Loader2 class="h-8 w-8 animate-spin" />
-          </div>
-          <div v-else-if="selectedInvoice" class="space-y-6">
-            <!-- Invoice Info -->
-            <div class="grid grid-cols-2 gap-4 text-sm">
-              <div>
-                <span class="text-muted-foreground">Status:</span>
-                <div>
-                  <Badge
-                    :variant="getStatusBadgeVariant(selectedInvoice.status)"
-                  >
-                    {{ selectedInvoice.status }}
-                  </Badge>
-                </div>
-              </div>
-              <div>
-                <span class="text-muted-foreground">Due Date:</span>
-                <div class="font-medium">
-                  {{ formatDate(selectedInvoice.due_date) }}
-                </div>
-              </div>
-              <div v-if="selectedInvoice.paid_at">
-                <span class="text-muted-foreground">Paid At:</span>
-                <div class="font-medium">
-                  {{ formatDate(selectedInvoice.paid_at) }}
-                </div>
-              </div>
-              <div>
-                <span class="text-muted-foreground">Created:</span>
-                <div class="font-medium">
-                  {{ formatDate(selectedInvoice.created_at) }}
-                </div>
-              </div>
-            </div>
-
-            <!-- Items -->
-            <div
-              v-if="selectedInvoice.items && selectedInvoice.items.length > 0"
+      <!-- VIEW INVOICE PAGE -->
+      <template v-else-if="currentView === 'view'">
+        <div class="mb-6 flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <button
+              type="button"
+              @click="goBackToList"
+              class="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors mb-4"
             >
-              <h3 class="font-semibold mb-3">Items</h3>
-              <table class="w-full">
-                <thead>
-                  <tr class="border-b">
-                    <th class="text-left p-2 text-sm font-medium">
-                      Description
-                    </th>
-                    <th class="text-right p-2 text-sm font-medium">Quantity</th>
-                    <th class="text-right p-2 text-sm font-medium">
-                      Unit Price
-                    </th>
-                    <th class="text-right p-2 text-sm font-medium">Total</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr
-                    v-for="item in selectedInvoice.items"
-                    :key="item.id"
-                    class="border-b"
+              <ArrowLeft class="h-4 w-4" />
+              Back to invoices
+            </button>
+            <h1 class="text-3xl font-bold">
+              Invoice: {{ selectedInvoice?.invoice_number ?? "…" }}
+            </h1>
+            <p class="text-muted-foreground mt-1">
+              Invoice details and line items
+            </p>
+          </div>
+          <Button
+            v-if="selectedInvoice"
+            @click="downloadInvoice(selectedInvoice)"
+            variant="outline"
+            class="gap-2"
+          >
+            <Download class="h-4 w-4" />
+            Download
+          </Button>
+        </div>
+
+        <Card class="border-2 shadow-xl">
+          <div class="p-6">
+            <div
+              v-if="loadingInvoice"
+              class="flex items-center justify-center py-16"
+            >
+              <Loader2 class="h-8 w-8 animate-spin" />
+            </div>
+            <div v-else-if="selectedInvoice" class="space-y-6">
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div class="border rounded-lg p-4 bg-muted/10">
+                  <h3 class="font-semibold mb-3 text-sm uppercase text-muted-foreground">
+                    Bill To
+                  </h3>
+                  <div class="space-y-1 text-sm">
+                    <p v-if="selectedInvoice.customer?.username" class="font-medium">
+                      {{ selectedInvoice.customer.username }}
+                    </p>
+                    <p v-if="selectedInvoice.customer?.email" class="text-muted-foreground">
+                      {{ selectedInvoice.customer.email }}
+                    </p>
+                    <div
+                      v-if="selectedInvoice.customer?.billing_info"
+                      class="mt-3 space-y-1"
+                    >
+                      <p v-if="selectedInvoice.customer.billing_info.full_name">
+                        {{ selectedInvoice.customer.billing_info.full_name }}
+                      </p>
+                      <p v-if="selectedInvoice.customer.billing_info.company_name">
+                        {{ selectedInvoice.customer.billing_info.company_name }}
+                      </p>
+                      <p v-if="selectedInvoice.customer.billing_info.address_line1">
+                        {{ selectedInvoice.customer.billing_info.address_line1 }}
+                      </p>
+                      <p v-if="selectedInvoice.customer.billing_info.address_line2">
+                        {{ selectedInvoice.customer.billing_info.address_line2 }}
+                      </p>
+                      <p
+                        v-if="
+                          selectedInvoice.customer.billing_info.city ||
+                          selectedInvoice.customer.billing_info.state ||
+                          selectedInvoice.customer.billing_info.postal_code
+                        "
+                      >
+                        {{
+                          [
+                            selectedInvoice.customer.billing_info.city,
+                            selectedInvoice.customer.billing_info.state,
+                            selectedInvoice.customer.billing_info.postal_code,
+                          ]
+                            .filter(Boolean)
+                            .join(", ")
+                        }}
+                      </p>
+                      <p v-if="selectedInvoice.customer.billing_info.country_code">
+                        {{ selectedInvoice.customer.billing_info.country_code }}
+                      </p>
+                      <p v-if="selectedInvoice.customer.billing_info.vat_id">
+                        VAT ID: {{ selectedInvoice.customer.billing_info.vat_id }}
+                      </p>
+                      <p v-if="selectedInvoice.customer.billing_info.phone">
+                        {{ selectedInvoice.customer.billing_info.phone }}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="border rounded-lg p-4 bg-muted/10">
+                  <h3 class="font-semibold mb-3 text-sm uppercase text-muted-foreground">
+                    From
+                  </h3>
+                  <div
+                    v-if="selectedInvoice.admin?.billing_info"
+                    class="space-y-1 text-sm"
                   >
-                    <td class="p-2">{{ item.description }}</td>
-                    <td class="p-2 text-right">{{ item.quantity }}</td>
-                    <td class="p-2 text-right">
-                      {{ item.unit_price_formatted || item.unit_price }}
-                    </td>
-                    <td class="p-2 text-right font-medium">
-                      {{ item.total_formatted || item.total }}
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
+                    <p
+                      v-if="selectedInvoice.admin.billing_info.full_name"
+                      class="font-medium"
+                    >
+                      {{ selectedInvoice.admin.billing_info.full_name }}
+                    </p>
+                    <p
+                      v-if="selectedInvoice.admin.billing_info.company_name"
+                      class="font-medium"
+                    >
+                      {{ selectedInvoice.admin.billing_info.company_name }}
+                    </p>
+                    <p v-if="selectedInvoice.admin.billing_info.address_line1">
+                      {{ selectedInvoice.admin.billing_info.address_line1 }}
+                    </p>
+                    <p v-if="selectedInvoice.admin.billing_info.address_line2">
+                      {{ selectedInvoice.admin.billing_info.address_line2 }}
+                    </p>
+                    <p
+                      v-if="
+                        selectedInvoice.admin.billing_info.city ||
+                        selectedInvoice.admin.billing_info.state ||
+                        selectedInvoice.admin.billing_info.postal_code
+                      "
+                    >
+                      {{
+                        [
+                          selectedInvoice.admin.billing_info.city,
+                          selectedInvoice.admin.billing_info.state,
+                          selectedInvoice.admin.billing_info.postal_code,
+                        ]
+                          .filter(Boolean)
+                          .join(", ")
+                      }}
+                    </p>
+                    <p v-if="selectedInvoice.admin.billing_info.country_code">
+                      {{ selectedInvoice.admin.billing_info.country_code }}
+                    </p>
+                    <p v-if="selectedInvoice.admin.billing_info.vat_id">
+                      VAT ID: {{ selectedInvoice.admin.billing_info.vat_id }}
+                    </p>
+                    <p v-if="selectedInvoice.admin.billing_info.phone">
+                      {{ selectedInvoice.admin.billing_info.phone }}
+                    </p>
+                  </div>
+                </div>
+              </div>
 
-            <!-- Totals -->
-            <div class="border-t pt-4 space-y-2">
-              <div class="flex justify-between">
-                <span class="text-muted-foreground">Subtotal:</span>
-                <span class="font-medium">{{
-                  selectedInvoice.subtotal_formatted || selectedInvoice.subtotal
-                }}</span>
+              <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                <div>
+                  <span class="text-muted-foreground">Status</span>
+                  <div class="mt-0.5">
+                    <Badge :variant="getStatusBadgeVariant(selectedInvoice.status)">
+                      {{ selectedInvoice.status }}
+                    </Badge>
+                  </div>
+                </div>
+                <div>
+                  <span class="text-muted-foreground">Due Date</span>
+                  <div class="font-medium mt-0.5">
+                    {{ formatDate(selectedInvoice.due_date) }}
+                  </div>
+                </div>
+                <div v-if="selectedInvoice.paid_at">
+                  <span class="text-muted-foreground">Paid At</span>
+                  <div class="font-medium mt-0.5">
+                    {{ formatDate(selectedInvoice.paid_at) }}
+                  </div>
+                </div>
+                <div>
+                  <span class="text-muted-foreground">Created</span>
+                  <div class="font-medium mt-0.5">
+                    {{ formatDate(selectedInvoice.created_at) }}
+                  </div>
+                </div>
               </div>
-              <div class="flex justify-between">
-                <span class="text-muted-foreground"
-                  >Tax ({{ selectedInvoice.tax_rate }}%):</span
-                >
-                <span class="font-medium">{{
-                  selectedInvoice.tax_amount_formatted ||
-                  selectedInvoice.tax_amount
-                }}</span>
-              </div>
-              <div class="flex justify-between text-lg font-bold border-t pt-2">
-                <span>Total:</span>
-                <span>{{
-                  selectedInvoice.total_formatted || selectedInvoice.total
-                }}</span>
-              </div>
-            </div>
 
-            <!-- Notes -->
-            <div v-if="selectedInvoice.notes" class="p-4 bg-muted rounded-lg">
-              <h4 class="font-semibold mb-2">Notes</h4>
-              <p class="text-sm text-muted-foreground">
-                {{ selectedInvoice.notes }}
-              </p>
+              <div
+                v-if="selectedInvoice.items && selectedInvoice.items.length > 0"
+              >
+                <h3 class="font-semibold mb-3">Items</h3>
+                <div class="overflow-x-auto border rounded-lg">
+                  <table class="w-full">
+                    <thead>
+                      <tr class="border-b bg-muted/30">
+                        <th class="text-left p-3 text-sm font-medium">Description</th>
+                        <th class="text-right p-3 text-sm font-medium">Quantity</th>
+                        <th class="text-right p-3 text-sm font-medium">Unit Price</th>
+                        <th class="text-right p-3 text-sm font-medium">Total</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr
+                        v-for="item in selectedInvoice.items"
+                        :key="item.id"
+                        class="border-b last:border-b-0"
+                      >
+                        <td class="p-3">{{ item.description }}</td>
+                        <td class="p-3 text-right">{{ item.quantity }}</td>
+                        <td class="p-3 text-right">
+                          {{ item.unit_price_formatted || item.unit_price }}
+                        </td>
+                        <td class="p-3 text-right font-medium">
+                          {{ item.total_formatted || item.total }}
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <div class="border-t pt-4 space-y-2 max-w-sm ml-auto">
+                <div class="flex justify-between">
+                  <span class="text-muted-foreground">Subtotal:</span>
+                  <span class="font-medium">{{
+                    selectedInvoice.subtotal_formatted || selectedInvoice.subtotal
+                  }}</span>
+                </div>
+                <div class="flex justify-between">
+                  <span class="text-muted-foreground"
+                    >Tax ({{ selectedInvoice.tax_rate }}%):</span
+                  >
+                  <span class="font-medium">{{
+                    selectedInvoice.tax_amount_formatted ||
+                    selectedInvoice.tax_amount
+                  }}</span>
+                </div>
+                <div class="flex justify-between text-lg font-bold border-t pt-2">
+                  <span>Total:</span>
+                  <span>{{
+                    selectedInvoice.total_formatted || selectedInvoice.total
+                  }}</span>
+                </div>
+              </div>
+
+              <div
+                v-if="selectedInvoice.notes"
+                class="p-4 bg-muted/30 rounded-lg border"
+              >
+                <h4 class="font-semibold mb-2">Notes</h4>
+                <p class="text-sm text-muted-foreground">
+                  {{ selectedInvoice.notes }}
+                </p>
+              </div>
             </div>
           </div>
-        </DialogContent>
-      </Dialog>
+        </Card>
+      </template>
+
     </div>
   </div>
 </template>

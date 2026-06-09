@@ -17,6 +17,7 @@
 
 namespace App\Addons\billingcore\Controllers\User;
 
+use App\Helpers\TimeHelper;
 use App\Helpers\ApiResponse;
 use OpenApi\Attributes as OA;
 use App\Addons\billingcore\Chat\Invoice;
@@ -92,7 +93,7 @@ class BillingCoreController
             ], 'Billing info retrieved successfully', 200);
         }
 
-        return ApiResponse::success([
+        return ApiResponse::success(TimeHelper::normaliseRow([
             'user_id' => $billing['user_id'],
             'credits' => $billing['credits'],
             'credits_formatted' => CurrencyHelper::formatAmount($billing['credits']),
@@ -100,7 +101,7 @@ class BillingCoreController
             'billing_info' => $billingInfo,
             'created_at' => $billing['created_at'],
             'updated_at' => $billing['updated_at'],
-        ], 'Billing info retrieved successfully', 200);
+        ]), 'Billing info retrieved successfully', 200);
     }
 
     #[OA\Get(
@@ -140,7 +141,7 @@ class BillingCoreController
             ], 'Billing profile retrieved successfully', 200);
         }
 
-        return ApiResponse::success($info, 'Billing profile retrieved successfully', 200);
+        return ApiResponse::success(TimeHelper::normaliseRow($info), 'Billing profile retrieved successfully', 200);
     }
 
     #[OA\Patch(
@@ -233,6 +234,7 @@ class BillingCoreController
 
         // Format amounts
         foreach ($invoices as &$invoice) {
+            $invoice = TimeHelper::normaliseRow($invoice, ['due_date', 'paid_at']);
             $invoice['subtotal_formatted'] = CurrencyHelper::formatAmount((float) $invoice['subtotal']);
             $invoice['tax_amount_formatted'] = CurrencyHelper::formatAmount((float) $invoice['tax_amount']);
             $invoice['total_formatted'] = CurrencyHelper::formatAmount((float) $invoice['total']);
@@ -284,6 +286,7 @@ class BillingCoreController
         }
 
         $currency = CurrencyHelper::getDefaultCurrency();
+        $invoiceWithItems = TimeHelper::normaliseRow($invoiceWithItems, ['due_date', 'paid_at']);
         $invoiceWithItems['subtotal_formatted'] = CurrencyHelper::formatAmount((float) $invoiceWithItems['subtotal']);
         $invoiceWithItems['tax_amount_formatted'] = CurrencyHelper::formatAmount((float) $invoiceWithItems['tax_amount']);
         $invoiceWithItems['total_formatted'] = CurrencyHelper::formatAmount((float) $invoiceWithItems['total']);

@@ -20,6 +20,7 @@ namespace App\Addons\billingcore\Controllers\Admin;
 use App\Chat\User;
 use App\Chat\Activity;
 use App\Chat\Database;
+use App\Helpers\TimeHelper;
 use App\Helpers\ApiResponse;
 use OpenApi\Attributes as OA;
 use App\Plugins\PluginSettings;
@@ -922,6 +923,7 @@ class BillingCoreController
 
         // Format amounts
         foreach ($invoices as &$invoice) {
+            $invoice = TimeHelper::normaliseRow($invoice, ['due_date', 'paid_at']);
             $invoice['subtotal_formatted'] = CurrencyHelper::formatAmount((float) $invoice['subtotal']);
             $invoice['tax_amount_formatted'] = CurrencyHelper::formatAmount((float) $invoice['tax_amount']);
             $invoice['total_formatted'] = CurrencyHelper::formatAmount((float) $invoice['total']);
@@ -968,11 +970,13 @@ class BillingCoreController
         $currency = CurrencyHelper::getDefaultCurrency();
         $creditsMode = CurrencyHelper::getCreditsMode();
 
+        $invoice = TimeHelper::normaliseRow($invoice, ['due_date', 'paid_at']);
         $invoice['subtotal_formatted'] = CurrencyHelper::formatAmount((float) $invoice['subtotal']);
         $invoice['tax_amount_formatted'] = CurrencyHelper::formatAmount((float) $invoice['tax_amount']);
         $invoice['total_formatted'] = CurrencyHelper::formatAmount((float) $invoice['total']);
 
         foreach ($invoice['items'] as &$item) {
+            $item = TimeHelper::normaliseRow($item);
             $item['unit_price_formatted'] = CurrencyHelper::formatAmount((float) $item['unit_price']);
             $item['total_formatted'] = CurrencyHelper::formatAmount((float) $item['total']);
         }

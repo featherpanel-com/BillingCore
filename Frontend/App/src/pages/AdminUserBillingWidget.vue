@@ -13,6 +13,7 @@ import {
   type Invoice,
 } from "@/composables/useBillingAPI";
 import { useToast } from "vue-toastification";
+import { usePanelTimezone } from "@/composables/usePanelTimezone";
 
 function parseUserIdFromSearch(): number | null {
   const params = new URLSearchParams(window.location.search);
@@ -25,6 +26,7 @@ function parseUserIdFromSearch(): number | null {
 const userId = ref<number | null>(parseUserIdFromSearch());
 
 const toast = useToast();
+const { formatDate } = usePanelTimezone();
 const {
   getUserCredits,
   getUserBillingInfo,
@@ -42,15 +44,6 @@ const billingInfo = ref<BillingInfo | null>(null);
 const invoices = ref<Invoice[]>([]);
 const invoiceMeta = ref<{ total: number; per_page: number } | null>(null);
 const loadError = ref<string | null>(null);
-
-const formatDate = (dateString: string | null) => {
-  if (!dateString) return "—";
-  return new Date(dateString).toLocaleDateString(undefined, {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-  });
-};
 
 const getStatusBadgeVariant = (status: string) => {
   switch (status) {

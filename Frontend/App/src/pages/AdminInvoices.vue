@@ -14,13 +14,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import {
   Loader2,
   Plus,
   Eye,
@@ -32,6 +25,7 @@ import {
   FileText,
   Calendar,
   DollarSign,
+  ArrowLeft,
 } from "lucide-vue-next";
 import {
   useAdminBillingAPI,
@@ -39,8 +33,10 @@ import {
   type User,
 } from "@/composables/useBillingAPI";
 import { useToast } from "vue-toastification";
+import { usePanelTimezone } from "@/composables/usePanelTimezone";
 
 const toast = useToast();
+const { formatDate } = usePanelTimezone();
 const {
   loading,
   getInvoices,
@@ -60,9 +56,8 @@ const totalPages = ref(1);
 const searchQuery = ref("");
 const statusFilter = ref<string>("all");
 const selectedInvoice = ref<Invoice | null>(null);
-const invoiceDialogOpen = ref(false);
-const createDialogOpen = ref(false);
-const editDialogOpen = ref(false);
+type PageView = "list" | "create" | "edit" | "view";
+const currentView = ref<PageView>("list");
 const loadingInvoice = ref(false);
 const savingInvoice = ref(false);
 
@@ -143,15 +138,24 @@ const loadInvoices = async (page: number = 1) => {
 
 const viewInvoice = async (invoiceId: number) => {
   loadingInvoice.value = true;
-  invoiceDialogOpen.value = true;
+  currentView.value = "view";
   try {
     selectedInvoice.value = await getInvoice(invoiceId);
   } catch (err) {
     toast.error(err instanceof Error ? err.message : "Failed to load invoice");
-    invoiceDialogOpen.value = false;
+    currentView.value = "list";
   } finally {
     loadingInvoice.value = false;
   }
+};
+
+const goBackToList = () => {
+  currentView.value = "list";
+  selectedInvoice.value = null;
+  currentInvoiceId.value = null;
+  selectedUser.value = null;
+  userSearchQuery.value = "";
+  showUserDropdown.value = false;
 };
 
 let searchTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -227,13 +231,13 @@ const openCreateDialog = () => {
       },
     ],
   };
-  createDialogOpen.value = true;
+  currentView.value = "create";
 };
 
 const openEditDialog = async (invoiceId: number) => {
   currentInvoiceId.value = invoiceId;
   loadingInvoice.value = true;
-  editDialogOpen.value = true;
+  currentView.value = "edit";
   try {
     const invoice = await getInvoice(invoiceId);
     // Always set the user if we have user_id, even if username/email aren't available
@@ -295,7 +299,7 @@ const openEditDialog = async (invoiceId: number) => {
     }
   } catch (err) {
     toast.error(err instanceof Error ? err.message : "Failed to load invoice");
-    editDialogOpen.value = false;
+    currentView.value = "list";
   } finally {
     loadingInvoice.value = false;
   }
@@ -367,12 +371,11 @@ const saveInvoice = async () => {
         invoiceData as Partial<Invoice>
       );
       toast.success("Invoice updated successfully!");
-      editDialogOpen.value = false;
     } else {
       await createInvoice(invoiceData as Parameters<typeof createInvoice>[0]);
       toast.success("Invoice created successfully!");
-      createDialogOpen.value = false;
     }
+    goBackToList();
     loadInvoices(currentPage.value);
   } catch (err) {
     toast.error(err instanceof Error ? err.message : "Failed to save invoice");
@@ -449,11 +452,6 @@ const handleDeleteItem = async (invoiceId: number, itemId: number) => {
   }
 };
 
-const formatDate = (dateString: string | null) => {
-  if (!dateString) return "N/A";
-  return new Date(dateString).toLocaleDateString();
-};
-
 onMounted(() => {
   loadInvoices(1);
   document.addEventListener("click", handleClickOutside);
@@ -468,8 +466,11 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="w-full h-full overflow-auto p-4">
+  <div class="w-full h-full overflow-auto p-4 md:p-6">
     <div class="container mx-auto max-w-6xl">
+
+      <!-- LIST -->
+      <template v-if="currentView === 'list'">
       <div class="mb-6 flex justify-between items-center">
         <div>
           <h1 class="text-2xl font-semibold">Invoice Management</h1>
@@ -670,749 +671,540 @@ onUnmounted(() => {
           </div>
         </div>
       </Card>
+      </template>
 
-      <!-- Invoice Details Dialog -->
-      <Dialog v-model:open="invoiceDialogOpen">
-        <DialogContent class="max-w-4xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>
-              Invoice: {{ selectedInvoice?.invoice_number }}
-            </DialogTitle>
-            <DialogDescription> Invoice details and items </DialogDescription>
-          </DialogHeader>
-
-          <div
-            v-if="loadingInvoice"
-            class="flex items-center justify-center py-12"
+      <!-- CREATE / EDIT FORM PAGE -->
+      <template v-else-if="currentView === 'create' || currentView === 'edit'">
+        <div class="mb-6">
+          <button
+            type="button"
+            @click="goBackToList"
+            class="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors mb-4"
           >
-            <Loader2 class="h-8 w-8 animate-spin" />
-          </div>
-          <div v-else-if="selectedInvoice" class="space-y-6">
-            <!-- Billing Information -->
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <!-- Customer Info -->
-              <div class="border rounded-lg p-4">
-                <h3
-                  class="font-semibold mb-3 text-sm uppercase text-muted-foreground"
-                >
-                  Bill To
-                </h3>
-                <div class="space-y-1 text-sm">
-                  <p
-                    v-if="selectedInvoice.customer?.username"
-                    class="font-medium"
+            <ArrowLeft class="h-4 w-4" />
+            Back to invoices
+          </button>
+          <h1 class="text-2xl font-semibold">
+            {{ currentView === "create" ? "Create Invoice" : "Edit Invoice" }}
+          </h1>
+          <p class="text-sm text-muted-foreground mt-1">
+            {{
+              currentView === "create"
+                ? "Create a new invoice for a user"
+                : "Update invoice details and line items"
+            }}
+          </p>
+        </div>
+
+        <Card>
+          <div class="p-6">
+            <div
+              v-if="loadingInvoice"
+              class="flex items-center justify-center py-16"
+            >
+              <Loader2 class="h-8 w-8 animate-spin" />
+            </div>
+            <form v-else @submit.prevent="saveInvoice" class="space-y-6">
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div class="relative user-search-container">
+                  <Label for="user_search">User *</Label>
+                  <div class="relative">
+                    <Input
+                      id="user_search"
+                      v-model="userSearchQuery"
+                      placeholder="Search by username or email..."
+                      @input="searchUsers"
+                      @focus="searchUsers"
+                      @click.stop
+                      required
+                    />
+                    <div
+                      v-if="showUserDropdown && userSearchResults.length > 0"
+                      class="absolute z-50 w-full mt-1 bg-popover border rounded-md shadow-lg max-h-60 overflow-auto"
+                      @click.stop
+                    >
+                      <div
+                        v-for="user in userSearchResults"
+                        :key="user.id"
+                        @click="selectUser(user)"
+                        class="p-3 hover:bg-muted cursor-pointer border-b last:border-b-0"
+                      >
+                        <div class="font-medium">{{ user.username }}</div>
+                        <div class="text-sm text-muted-foreground">
+                          {{ user.email }}
+                        </div>
+                      </div>
+                    </div>
+                    <div
+                      v-if="selectedUser"
+                      class="absolute right-2 top-1/2 -translate-y-1/2"
+                    >
+                      <Button
+                        type="button"
+                        @click.stop="clearUserSelection"
+                        variant="ghost"
+                        size="sm"
+                        class="h-6 w-6 p-0"
+                      >
+                        <X class="h-3 w-3" />
+                      </Button>
+                    </div>
+                  </div>
+                  <input v-model="invoiceForm.user_id" type="hidden" required />
+                </div>
+                <div>
+                  <Label for="invoice_number">Invoice Number</Label>
+                  <Input
+                    id="invoice_number"
+                    v-model="invoiceForm.invoice_number"
+                    placeholder="Auto-generated if empty"
+                  />
+                </div>
+                <div>
+                  <Label for="status">Status</Label>
+                  <Select v-model="invoiceForm.status">
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="draft">Draft</SelectItem>
+                      <SelectItem value="pending">Pending</SelectItem>
+                      <SelectItem value="paid">Paid</SelectItem>
+                      <SelectItem value="overdue">Overdue</SelectItem>
+                      <SelectItem value="cancelled">Cancelled</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label for="due_date">Due Date</Label>
+                  <Input
+                    id="due_date"
+                    v-model="invoiceForm.due_date"
+                    type="date"
+                  />
+                </div>
+                <div>
+                  <Label for="tax_rate">Tax Rate (%)</Label>
+                  <Input
+                    id="tax_rate"
+                    v-model="invoiceForm.tax_rate"
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    max="100"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <Label for="notes">Notes</Label>
+                <Textarea
+                  id="notes"
+                  v-model="invoiceForm.notes"
+                  placeholder="Additional notes..."
+                />
+              </div>
+
+              <div>
+                <div class="flex justify-between items-center mb-3">
+                  <Label>Invoice Items *</Label>
+                  <Button
+                    type="button"
+                    @click="addItemRow"
+                    variant="outline"
+                    size="sm"
                   >
-                    {{ selectedInvoice.customer.username }}
-                  </p>
-                  <p
-                    v-if="selectedInvoice.customer?.email"
-                    class="text-muted-foreground"
-                  >
-                    {{ selectedInvoice.customer.email }}
-                  </p>
-                  <p class="text-muted-foreground">
-                    User ID: {{ selectedInvoice.user_id }}
-                  </p>
+                    <Plus class="h-3 w-3 mr-1" />
+                    Add Item
+                  </Button>
+                </div>
+                <div class="space-y-3">
                   <div
-                    v-if="selectedInvoice.customer?.billing_info"
-                    class="mt-3 space-y-1"
+                    v-for="(item, index) in invoiceForm.items"
+                    :key="item.id"
+                    class="border rounded-lg p-4 space-y-3 bg-muted/20"
                   >
-                    <p v-if="selectedInvoice.customer.billing_info.full_name">
-                      {{ selectedInvoice.customer.billing_info.full_name }}
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+                      <div class="md:col-span-3">
+                        <Label :for="`item-description-${index}`"
+                          >Item Description *</Label
+                        >
+                        <Input
+                          :id="`item-description-${index}`"
+                          v-model="item.description"
+                          placeholder="e.g., Web Hosting - Monthly"
+                          required
+                        />
+                      </div>
+                      <div>
+                        <Label :for="`item-quantity-${index}`">Quantity</Label>
+                        <Input
+                          :id="`item-quantity-${index}`"
+                          v-model="item.quantity"
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          placeholder="1"
+                          @input="updateItemTotal(index)"
+                        />
+                      </div>
+                      <div>
+                        <Label :for="`item-unit-price-${index}`"
+                          >Unit Price</Label
+                        >
+                        <Input
+                          :id="`item-unit-price-${index}`"
+                          v-model="item.unit_price"
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          placeholder="0.00"
+                          @input="updateItemTotal(index)"
+                        />
+                      </div>
+                      <div>
+                        <Label :for="`item-total-${index}`">Line Total</Label>
+                        <Input
+                          :id="`item-total-${index}`"
+                          v-model="item.total"
+                          readonly
+                          placeholder="0.00"
+                          class="bg-muted"
+                        />
+                      </div>
+                    </div>
+                    <div class="flex justify-end">
+                      <Button
+                        type="button"
+                        @click="removeItemRow(index)"
+                        variant="destructive"
+                        size="sm"
+                      >
+                        <Trash2 class="h-3 w-3 mr-1" />
+                        Remove Item
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="flex justify-end gap-2 pt-2 border-t">
+                <Button type="button" @click="goBackToList" variant="outline">
+                  Cancel
+                </Button>
+                <Button type="submit" :disabled="savingInvoice">
+                  <Loader2
+                    v-if="savingInvoice"
+                    class="h-4 w-4 mr-2 animate-spin"
+                  />
+                  {{ currentView === "create" ? "Create Invoice" : "Update Invoice" }}
+                </Button>
+              </div>
+            </form>
+          </div>
+        </Card>
+      </template>
+
+      <!-- VIEW INVOICE PAGE -->
+      <template v-else-if="currentView === 'view'">
+        <div class="mb-6 flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <button
+              type="button"
+              @click="goBackToList"
+              class="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors mb-4"
+            >
+              <ArrowLeft class="h-4 w-4" />
+              Back to invoices
+            </button>
+            <h1 class="text-2xl font-semibold">
+              Invoice: {{ selectedInvoice?.invoice_number ?? "…" }}
+            </h1>
+            <p class="text-sm text-muted-foreground mt-1">
+              Invoice details and line items
+            </p>
+          </div>
+          <div v-if="selectedInvoice" class="flex gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              @click="openEditDialog(selectedInvoice.id)"
+            >
+              <Edit class="h-4 w-4 mr-1" />
+              Edit
+            </Button>
+          </div>
+        </div>
+
+        <Card>
+          <div class="p-6">
+            <div
+              v-if="loadingInvoice"
+              class="flex items-center justify-center py-16"
+            >
+              <Loader2 class="h-8 w-8 animate-spin" />
+            </div>
+            <div v-else-if="selectedInvoice" class="space-y-6">
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div class="border rounded-lg p-4 bg-muted/10">
+                  <h3 class="font-semibold mb-3 text-sm uppercase text-muted-foreground">
+                    Bill To
+                  </h3>
+                  <div class="space-y-1 text-sm">
+                    <p v-if="selectedInvoice.customer?.username" class="font-medium">
+                      {{ selectedInvoice.customer.username }}
+                    </p>
+                    <p v-if="selectedInvoice.customer?.email" class="text-muted-foreground">
+                      {{ selectedInvoice.customer.email }}
+                    </p>
+                    <p class="text-muted-foreground">
+                      User ID: {{ selectedInvoice.user_id }}
+                    </p>
+                    <div
+                      v-if="selectedInvoice.customer?.billing_info"
+                      class="mt-3 space-y-1"
+                    >
+                      <p v-if="selectedInvoice.customer.billing_info.full_name">
+                        {{ selectedInvoice.customer.billing_info.full_name }}
+                      </p>
+                      <p v-if="selectedInvoice.customer.billing_info.company_name">
+                        {{ selectedInvoice.customer.billing_info.company_name }}
+                      </p>
+                      <p v-if="selectedInvoice.customer.billing_info.address_line1">
+                        {{ selectedInvoice.customer.billing_info.address_line1 }}
+                      </p>
+                      <p v-if="selectedInvoice.customer.billing_info.address_line2">
+                        {{ selectedInvoice.customer.billing_info.address_line2 }}
+                      </p>
+                      <p
+                        v-if="
+                          selectedInvoice.customer.billing_info.city ||
+                          selectedInvoice.customer.billing_info.state ||
+                          selectedInvoice.customer.billing_info.postal_code
+                        "
+                      >
+                        {{
+                          [
+                            selectedInvoice.customer.billing_info.city,
+                            selectedInvoice.customer.billing_info.state,
+                            selectedInvoice.customer.billing_info.postal_code,
+                          ]
+                            .filter(Boolean)
+                            .join(", ")
+                        }}
+                      </p>
+                      <p v-if="selectedInvoice.customer.billing_info.country_code">
+                        {{ selectedInvoice.customer.billing_info.country_code }}
+                      </p>
+                      <p v-if="selectedInvoice.customer.billing_info.vat_id">
+                        VAT ID: {{ selectedInvoice.customer.billing_info.vat_id }}
+                      </p>
+                      <p v-if="selectedInvoice.customer.billing_info.phone">
+                        {{ selectedInvoice.customer.billing_info.phone }}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="border rounded-lg p-4 bg-muted/10">
+                  <h3 class="font-semibold mb-3 text-sm uppercase text-muted-foreground">
+                    From
+                  </h3>
+                  <div
+                    v-if="selectedInvoice.admin?.billing_info"
+                    class="space-y-1 text-sm"
+                  >
+                    <p
+                      v-if="selectedInvoice.admin.billing_info.full_name"
+                      class="font-medium"
+                    >
+                      {{ selectedInvoice.admin.billing_info.full_name }}
                     </p>
                     <p
-                      v-if="selectedInvoice.customer.billing_info.company_name"
+                      v-if="selectedInvoice.admin.billing_info.company_name"
+                      class="font-medium"
                     >
-                      {{ selectedInvoice.customer.billing_info.company_name }}
+                      {{ selectedInvoice.admin.billing_info.company_name }}
                     </p>
-                    <p
-                      v-if="selectedInvoice.customer.billing_info.address_line1"
-                    >
-                      {{ selectedInvoice.customer.billing_info.address_line1 }}
+                    <p v-if="selectedInvoice.admin.billing_info.address_line1">
+                      {{ selectedInvoice.admin.billing_info.address_line1 }}
                     </p>
-                    <p
-                      v-if="selectedInvoice.customer.billing_info.address_line2"
-                    >
-                      {{ selectedInvoice.customer.billing_info.address_line2 }}
+                    <p v-if="selectedInvoice.admin.billing_info.address_line2">
+                      {{ selectedInvoice.admin.billing_info.address_line2 }}
                     </p>
                     <p
                       v-if="
-                        selectedInvoice.customer.billing_info.city ||
-                        selectedInvoice.customer.billing_info.state ||
-                        selectedInvoice.customer.billing_info.postal_code
+                        selectedInvoice.admin.billing_info.city ||
+                        selectedInvoice.admin.billing_info.state ||
+                        selectedInvoice.admin.billing_info.postal_code
                       "
                     >
                       {{
                         [
-                          selectedInvoice.customer.billing_info.city,
-                          selectedInvoice.customer.billing_info.state,
-                          selectedInvoice.customer.billing_info.postal_code,
+                          selectedInvoice.admin.billing_info.city,
+                          selectedInvoice.admin.billing_info.state,
+                          selectedInvoice.admin.billing_info.postal_code,
                         ]
                           .filter(Boolean)
                           .join(", ")
                       }}
                     </p>
-                    <p
-                      v-if="selectedInvoice.customer.billing_info.country_code"
-                    >
-                      {{ selectedInvoice.customer.billing_info.country_code }}
+                    <p v-if="selectedInvoice.admin.billing_info.country_code">
+                      {{ selectedInvoice.admin.billing_info.country_code }}
                     </p>
-                    <p v-if="selectedInvoice.customer.billing_info.vat_id">
-                      VAT ID: {{ selectedInvoice.customer.billing_info.vat_id }}
+                    <p v-if="selectedInvoice.admin.billing_info.vat_id">
+                      VAT ID: {{ selectedInvoice.admin.billing_info.vat_id }}
                     </p>
-                    <p v-if="selectedInvoice.customer.billing_info.phone">
-                      {{ selectedInvoice.customer.billing_info.phone }}
+                    <p v-if="selectedInvoice.admin.billing_info.phone">
+                      {{ selectedInvoice.admin.billing_info.phone }}
                     </p>
                   </div>
                 </div>
               </div>
 
-              <!-- Admin/Company Info -->
-              <div class="border rounded-lg p-4">
-                <h3
-                  class="font-semibold mb-3 text-sm uppercase text-muted-foreground"
-                >
-                  From
-                </h3>
-                <div
-                  v-if="selectedInvoice.admin?.billing_info"
-                  class="space-y-1 text-sm"
-                >
-                  <p
-                    v-if="selectedInvoice.admin.billing_info.full_name"
-                    class="font-medium"
-                  >
-                    {{ selectedInvoice.admin.billing_info.full_name }}
-                  </p>
-                  <p
-                    v-if="selectedInvoice.admin.billing_info.company_name"
-                    class="font-medium"
-                  >
-                    {{ selectedInvoice.admin.billing_info.company_name }}
-                  </p>
-                  <p v-if="selectedInvoice.admin.billing_info.address_line1">
-                    {{ selectedInvoice.admin.billing_info.address_line1 }}
-                  </p>
-                  <p v-if="selectedInvoice.admin.billing_info.address_line2">
-                    {{ selectedInvoice.admin.billing_info.address_line2 }}
-                  </p>
-                  <p
-                    v-if="
-                      selectedInvoice.admin.billing_info.city ||
-                      selectedInvoice.admin.billing_info.state ||
-                      selectedInvoice.admin.billing_info.postal_code
-                    "
-                  >
-                    {{
-                      [
-                        selectedInvoice.admin.billing_info.city,
-                        selectedInvoice.admin.billing_info.state,
-                        selectedInvoice.admin.billing_info.postal_code,
-                      ]
-                        .filter(Boolean)
-                        .join(", ")
-                    }}
-                  </p>
-                  <p v-if="selectedInvoice.admin.billing_info.country_code">
-                    {{ selectedInvoice.admin.billing_info.country_code }}
-                  </p>
-                  <p v-if="selectedInvoice.admin.billing_info.vat_id">
-                    VAT ID: {{ selectedInvoice.admin.billing_info.vat_id }}
-                  </p>
-                  <p v-if="selectedInvoice.admin.billing_info.phone">
-                    {{ selectedInvoice.admin.billing_info.phone }}
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            <!-- Invoice Info -->
-            <div class="grid grid-cols-2 gap-4 text-sm">
-              <div>
-                <span class="text-muted-foreground">User:</span>
-                <div class="font-medium">
-                  {{ selectedInvoice.username || "N/A" }} (ID:
-                  {{ selectedInvoice.user_id }})
-                </div>
-              </div>
-              <div>
-                <span class="text-muted-foreground">Status:</span>
+              <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
                 <div>
-                  <Badge
-                    :variant="getStatusBadgeVariant(selectedInvoice.status)"
-                  >
-                    {{ selectedInvoice.status }}
-                  </Badge>
+                  <span class="text-muted-foreground">User</span>
+                  <div class="font-medium mt-0.5">
+                    {{ selectedInvoice.username || "N/A" }} (ID:
+                    {{ selectedInvoice.user_id }})
+                  </div>
+                </div>
+                <div>
+                  <span class="text-muted-foreground">Status</span>
+                  <div class="mt-0.5">
+                    <Badge :variant="getStatusBadgeVariant(selectedInvoice.status)">
+                      {{ selectedInvoice.status }}
+                    </Badge>
+                  </div>
+                </div>
+                <div>
+                  <span class="text-muted-foreground">Due Date</span>
+                  <div class="font-medium mt-0.5">
+                    {{ formatDate(selectedInvoice.due_date) }}
+                  </div>
+                </div>
+                <div v-if="selectedInvoice.paid_at">
+                  <span class="text-muted-foreground">Paid At</span>
+                  <div class="font-medium mt-0.5">
+                    {{ formatDate(selectedInvoice.paid_at) }}
+                  </div>
+                </div>
+                <div>
+                  <span class="text-muted-foreground">Created</span>
+                  <div class="font-medium mt-0.5">
+                    {{ formatDate(selectedInvoice.created_at) }}
+                  </div>
                 </div>
               </div>
-              <div>
-                <span class="text-muted-foreground">Due Date:</span>
-                <div class="font-medium">
-                  {{ formatDate(selectedInvoice.due_date) }}
-                </div>
-              </div>
-              <div v-if="selectedInvoice.paid_at">
-                <span class="text-muted-foreground">Paid At:</span>
-                <div class="font-medium">
-                  {{ formatDate(selectedInvoice.paid_at) }}
-                </div>
-              </div>
-              <div>
-                <span class="text-muted-foreground">Created:</span>
-                <div class="font-medium">
-                  {{ formatDate(selectedInvoice.created_at) }}
-                </div>
-              </div>
-            </div>
 
-            <!-- Items -->
-            <div>
-              <div class="flex justify-between items-center mb-3">
-                <h3 class="font-semibold">Items</h3>
-                <Button
-                  @click="handleAddItem(selectedInvoice.id)"
-                  size="sm"
-                  variant="outline"
+              <div>
+                <div class="flex justify-between items-center mb-3">
+                  <h3 class="font-semibold">Items</h3>
+                  <Button
+                    @click="handleAddItem(selectedInvoice.id)"
+                    size="sm"
+                    variant="outline"
+                  >
+                    <Plus class="h-3 w-3 mr-1" />
+                    Add Item
+                  </Button>
+                </div>
+                <div
+                  v-if="selectedInvoice.items && selectedInvoice.items.length > 0"
+                  class="overflow-x-auto border rounded-lg"
                 >
-                  <Plus class="h-3 w-3 mr-1" />
-                  Add Item
-                </Button>
+                  <table class="w-full">
+                    <thead>
+                      <tr class="border-b bg-muted/30">
+                        <th class="text-left p-3 text-sm font-medium">Description</th>
+                        <th class="text-right p-3 text-sm font-medium">Quantity</th>
+                        <th class="text-right p-3 text-sm font-medium">Unit Price</th>
+                        <th class="text-right p-3 text-sm font-medium">Total</th>
+                        <th class="text-right p-3 text-sm font-medium">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr
+                        v-for="item in selectedInvoice.items"
+                        :key="item.id"
+                        class="border-b last:border-b-0"
+                      >
+                        <td class="p-3">{{ item.description }}</td>
+                        <td class="p-3 text-right">{{ item.quantity }}</td>
+                        <td class="p-3 text-right">
+                          {{ item.unit_price_formatted || item.unit_price }}
+                        </td>
+                        <td class="p-3 text-right font-medium">
+                          {{ item.total_formatted || item.total }}
+                        </td>
+                        <td class="p-3 text-right">
+                          <div class="flex gap-1 justify-end">
+                            <Button
+                              @click="handleEditItem(selectedInvoice.id, item.id)"
+                              variant="outline"
+                              size="sm"
+                              class="h-7 text-xs"
+                            >
+                              <Edit class="h-3 w-3" />
+                            </Button>
+                            <Button
+                              @click="handleDeleteItem(selectedInvoice.id, item.id)"
+                              variant="destructive"
+                              size="sm"
+                              class="h-7 text-xs"
+                            >
+                              <Trash2 class="h-3 w-3" />
+                            </Button>
+                          </div>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+                <div v-else class="text-center py-8 text-muted-foreground border rounded-lg">
+                  No items yet
+                </div>
               </div>
+
+              <div class="border-t pt-4 space-y-2 max-w-sm ml-auto">
+                <div class="flex justify-between">
+                  <span class="text-muted-foreground">Subtotal:</span>
+                  <span class="font-medium">{{
+                    selectedInvoice.subtotal_formatted || selectedInvoice.subtotal
+                  }}</span>
+                </div>
+                <div class="flex justify-between">
+                  <span class="text-muted-foreground"
+                    >Tax ({{ selectedInvoice.tax_rate }}%):</span
+                  >
+                  <span class="font-medium">{{
+                    selectedInvoice.tax_amount_formatted ||
+                    selectedInvoice.tax_amount
+                  }}</span>
+                </div>
+                <div class="flex justify-between text-lg font-bold border-t pt-2">
+                  <span>Total:</span>
+                  <span>{{
+                    selectedInvoice.total_formatted || selectedInvoice.total
+                  }}</span>
+                </div>
+              </div>
+
               <div
-                v-if="selectedInvoice.items && selectedInvoice.items.length > 0"
+                v-if="selectedInvoice.notes"
+                class="p-4 bg-muted/30 rounded-lg border"
               >
-                <table class="w-full">
-                  <thead>
-                    <tr class="border-b">
-                      <th class="text-left p-2 text-sm font-medium">
-                        Description
-                      </th>
-                      <th class="text-right p-2 text-sm font-medium">
-                        Quantity
-                      </th>
-                      <th class="text-right p-2 text-sm font-medium">
-                        Unit Price
-                      </th>
-                      <th class="text-right p-2 text-sm font-medium">Total</th>
-                      <th class="text-right p-2 text-sm font-medium">
-                        Actions
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr
-                      v-for="item in selectedInvoice.items"
-                      :key="item.id"
-                      class="border-b"
-                    >
-                      <td class="p-2">{{ item.description }}</td>
-                      <td class="p-2 text-right">{{ item.quantity }}</td>
-                      <td class="p-2 text-right">
-                        {{ item.unit_price_formatted || item.unit_price }}
-                      </td>
-                      <td class="p-2 text-right font-medium">
-                        {{ item.total_formatted || item.total }}
-                      </td>
-                      <td class="p-2 text-right">
-                        <div class="flex gap-1 justify-end">
-                          <Button
-                            @click="handleEditItem(selectedInvoice.id, item.id)"
-                            variant="outline"
-                            size="sm"
-                            class="h-6 text-xs"
-                          >
-                            <Edit class="h-3 w-3" />
-                          </Button>
-                          <Button
-                            @click="
-                              handleDeleteItem(selectedInvoice.id, item.id)
-                            "
-                            variant="destructive"
-                            size="sm"
-                            class="h-6 text-xs"
-                          >
-                            <Trash2 class="h-3 w-3" />
-                          </Button>
-                        </div>
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
+                <h4 class="font-semibold mb-2">Notes</h4>
+                <p class="text-sm text-muted-foreground">
+                  {{ selectedInvoice.notes }}
+                </p>
               </div>
-              <div v-else class="text-center py-4 text-muted-foreground">
-                No items yet
-              </div>
-            </div>
-
-            <!-- Totals -->
-            <div class="border-t pt-4 space-y-2">
-              <div class="flex justify-between">
-                <span class="text-muted-foreground">Subtotal:</span>
-                <span class="font-medium">{{
-                  selectedInvoice.subtotal_formatted || selectedInvoice.subtotal
-                }}</span>
-              </div>
-              <div class="flex justify-between">
-                <span class="text-muted-foreground"
-                  >Tax ({{ selectedInvoice.tax_rate }}%):</span
-                >
-                <span class="font-medium">{{
-                  selectedInvoice.tax_amount_formatted ||
-                  selectedInvoice.tax_amount
-                }}</span>
-              </div>
-              <div class="flex justify-between text-lg font-bold border-t pt-2">
-                <span>Total:</span>
-                <span>{{
-                  selectedInvoice.total_formatted || selectedInvoice.total
-                }}</span>
-              </div>
-            </div>
-
-            <!-- Notes -->
-            <div v-if="selectedInvoice.notes" class="p-4 bg-muted rounded-lg">
-              <h4 class="font-semibold mb-2">Notes</h4>
-              <p class="text-sm text-muted-foreground">
-                {{ selectedInvoice.notes }}
-              </p>
             </div>
           </div>
-        </DialogContent>
-      </Dialog>
+        </Card>
+      </template>
 
-      <!-- Create/Edit Invoice Dialog -->
-      <Dialog v-model:open="createDialogOpen">
-        <DialogContent class="max-w-4xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Create Invoice</DialogTitle>
-            <DialogDescription>
-              Create a new invoice for a user
-            </DialogDescription>
-          </DialogHeader>
-
-          <form @submit.prevent="saveInvoice" class="space-y-6">
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div class="relative user-search-container">
-                <Label for="user_search">User *</Label>
-                <div class="relative">
-                  <Input
-                    id="user_search"
-                    v-model="userSearchQuery"
-                    placeholder="Search by username or email..."
-                    @input="searchUsers"
-                    @focus="searchUsers"
-                    @click.stop
-                    required
-                  />
-                  <div
-                    v-if="showUserDropdown && userSearchResults.length > 0"
-                    class="absolute z-50 w-full mt-1 bg-popover border rounded-md shadow-lg max-h-60 overflow-auto"
-                    @click.stop
-                  >
-                    <div
-                      v-for="user in userSearchResults"
-                      :key="user.id"
-                      @click="selectUser(user)"
-                      class="p-3 hover:bg-muted cursor-pointer border-b last:border-b-0"
-                    >
-                      <div class="font-medium">{{ user.username }}</div>
-                      <div class="text-sm text-muted-foreground">
-                        {{ user.email }}
-                      </div>
-                    </div>
-                  </div>
-                  <div
-                    v-if="selectedUser"
-                    class="absolute right-2 top-1/2 -translate-y-1/2"
-                  >
-                    <Button
-                      type="button"
-                      @click.stop="clearUserSelection"
-                      variant="ghost"
-                      size="sm"
-                      class="h-6 w-6 p-0"
-                    >
-                      <X class="h-3 w-3" />
-                    </Button>
-                  </div>
-                </div>
-                <input v-model="invoiceForm.user_id" type="hidden" required />
-              </div>
-              <div>
-                <Label for="invoice_number">Invoice Number</Label>
-                <Input
-                  id="invoice_number"
-                  v-model="invoiceForm.invoice_number"
-                  placeholder="Auto-generated if empty"
-                />
-              </div>
-              <div>
-                <Label for="status">Status</Label>
-                <Select v-model="invoiceForm.status">
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="draft">Draft</SelectItem>
-                    <SelectItem value="pending">Pending</SelectItem>
-                    <SelectItem value="paid">Paid</SelectItem>
-                    <SelectItem value="overdue">Overdue</SelectItem>
-                    <SelectItem value="cancelled">Cancelled</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label for="due_date">Due Date</Label>
-                <Input
-                  id="due_date"
-                  v-model="invoiceForm.due_date"
-                  type="date"
-                />
-              </div>
-              <div>
-                <Label for="tax_rate">Tax Rate (%)</Label>
-                <Input
-                  id="tax_rate"
-                  v-model="invoiceForm.tax_rate"
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  max="100"
-                />
-              </div>
-            </div>
-
-            <div>
-              <Label for="notes">Notes</Label>
-              <Textarea
-                id="notes"
-                v-model="invoiceForm.notes"
-                placeholder="Additional notes..."
-              />
-            </div>
-
-            <div>
-              <div class="flex justify-between items-center mb-3">
-                <Label>Invoice Items *</Label>
-                <Button
-                  type="button"
-                  @click="addItemRow"
-                  variant="outline"
-                  size="sm"
-                >
-                  <Plus class="h-3 w-3 mr-1" />
-                  Add Item
-                </Button>
-              </div>
-              <div class="space-y-3">
-                <div
-                  v-for="(item, index) in invoiceForm.items"
-                  :key="item.id"
-                  class="border rounded-lg p-4 space-y-3"
-                >
-                  <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
-                    <div class="md:col-span-3">
-                      <Label :for="`item-description-${index}`"
-                        >Item Description *</Label
-                      >
-                      <Input
-                        :id="`item-description-${index}`"
-                        v-model="item.description"
-                        placeholder="e.g., Web Hosting - Monthly"
-                        required
-                      />
-                    </div>
-                    <div>
-                      <Label :for="`item-quantity-${index}`">Quantity</Label>
-                      <Input
-                        :id="`item-quantity-${index}`"
-                        v-model="item.quantity"
-                        type="number"
-                        step="0.01"
-                        min="0"
-                        placeholder="1"
-                        @input="updateItemTotal(index)"
-                      />
-                    </div>
-                    <div>
-                      <Label :for="`item-unit-price-${index}`"
-                        >Unit Price</Label
-                      >
-                      <Input
-                        :id="`item-unit-price-${index}`"
-                        v-model="item.unit_price"
-                        type="number"
-                        step="0.01"
-                        min="0"
-                        placeholder="0.00"
-                        @input="updateItemTotal(index)"
-                      />
-                    </div>
-                    <div>
-                      <Label :for="`item-total-${index}`">Line Total</Label>
-                      <Input
-                        :id="`item-total-${index}`"
-                        v-model="item.total"
-                        readonly
-                        placeholder="0.00"
-                        class="bg-muted"
-                      />
-                    </div>
-                  </div>
-                  <div class="flex justify-end">
-                    <Button
-                      type="button"
-                      @click="removeItemRow(index)"
-                      variant="destructive"
-                      size="sm"
-                    >
-                      <Trash2 class="h-3 w-3 mr-1" />
-                      Remove Item
-                    </Button>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div class="flex justify-end gap-2">
-              <Button
-                type="button"
-                @click="createDialogOpen = false"
-                variant="outline"
-              >
-                Cancel
-              </Button>
-              <Button type="submit" :disabled="savingInvoice">
-                <Loader2
-                  v-if="savingInvoice"
-                  class="h-4 w-4 mr-2 animate-spin"
-                />
-                Create Invoice
-              </Button>
-            </div>
-          </form>
-        </DialogContent>
-      </Dialog>
-
-      <!-- Edit Invoice Dialog -->
-      <Dialog v-model:open="editDialogOpen">
-        <DialogContent class="max-w-4xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Edit Invoice</DialogTitle>
-            <DialogDescription>
-              Update invoice details and items
-            </DialogDescription>
-          </DialogHeader>
-
-          <div
-            v-if="loadingInvoice"
-            class="flex items-center justify-center py-12"
-          >
-            <Loader2 class="h-8 w-8 animate-spin" />
-          </div>
-          <form v-else @submit.prevent="saveInvoice" class="space-y-6">
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div class="relative user-search-container">
-                <Label for="edit-user_search">User *</Label>
-                <div class="relative">
-                  <Input
-                    id="edit-user_search"
-                    v-model="userSearchQuery"
-                    placeholder="Search by username or email..."
-                    @input="searchUsers"
-                    @focus="searchUsers"
-                    @click.stop
-                    required
-                  />
-                  <div
-                    v-if="showUserDropdown && userSearchResults.length > 0"
-                    class="absolute z-50 w-full mt-1 bg-popover border rounded-md shadow-lg max-h-60 overflow-auto"
-                    @click.stop
-                  >
-                    <div
-                      v-for="user in userSearchResults"
-                      :key="user.id"
-                      @click="selectUser(user)"
-                      class="p-3 hover:bg-muted cursor-pointer border-b last:border-b-0"
-                    >
-                      <div class="font-medium">{{ user.username }}</div>
-                      <div class="text-sm text-muted-foreground">
-                        {{ user.email }}
-                      </div>
-                    </div>
-                  </div>
-                  <div
-                    v-if="selectedUser"
-                    class="absolute right-2 top-1/2 -translate-y-1/2"
-                  >
-                    <Button
-                      type="button"
-                      @click.stop="clearUserSelection"
-                      variant="ghost"
-                      size="sm"
-                      class="h-6 w-6 p-0"
-                    >
-                      <X class="h-3 w-3" />
-                    </Button>
-                  </div>
-                </div>
-                <input v-model="invoiceForm.user_id" type="hidden" required />
-              </div>
-              <div>
-                <Label for="edit-invoice_number">Invoice Number</Label>
-                <Input
-                  id="edit-invoice_number"
-                  v-model="invoiceForm.invoice_number"
-                  placeholder="Auto-generated if empty"
-                />
-              </div>
-              <div>
-                <Label for="edit-status">Status</Label>
-                <Select v-model="invoiceForm.status">
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="draft">Draft</SelectItem>
-                    <SelectItem value="pending">Pending</SelectItem>
-                    <SelectItem value="paid">Paid</SelectItem>
-                    <SelectItem value="overdue">Overdue</SelectItem>
-                    <SelectItem value="cancelled">Cancelled</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label for="edit-due_date">Due Date</Label>
-                <Input
-                  id="edit-due_date"
-                  v-model="invoiceForm.due_date"
-                  type="date"
-                />
-              </div>
-              <div>
-                <Label for="edit-tax_rate">Tax Rate (%)</Label>
-                <Input
-                  id="edit-tax_rate"
-                  v-model="invoiceForm.tax_rate"
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  max="100"
-                />
-              </div>
-            </div>
-
-            <div>
-              <Label for="edit-notes">Notes</Label>
-              <Textarea
-                id="edit-notes"
-                v-model="invoiceForm.notes"
-                placeholder="Additional notes..."
-              />
-            </div>
-
-            <div>
-              <div class="flex justify-between items-center mb-3">
-                <Label>Invoice Items *</Label>
-                <Button
-                  type="button"
-                  @click="addItemRow"
-                  variant="outline"
-                  size="sm"
-                >
-                  <Plus class="h-3 w-3 mr-1" />
-                  Add Item
-                </Button>
-              </div>
-              <div class="space-y-3">
-                <div
-                  v-for="(item, index) in invoiceForm.items"
-                  :key="item.id"
-                  class="border rounded-lg p-4 space-y-3"
-                >
-                  <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
-                    <div class="md:col-span-3">
-                      <Label :for="`item-description-${index}`"
-                        >Item Description *</Label
-                      >
-                      <Input
-                        :id="`item-description-${index}`"
-                        v-model="item.description"
-                        placeholder="e.g., Web Hosting - Monthly"
-                        required
-                      />
-                    </div>
-                    <div>
-                      <Label :for="`item-quantity-${index}`">Quantity</Label>
-                      <Input
-                        :id="`item-quantity-${index}`"
-                        v-model="item.quantity"
-                        type="number"
-                        step="0.01"
-                        min="0"
-                        placeholder="1"
-                        @input="updateItemTotal(index)"
-                      />
-                    </div>
-                    <div>
-                      <Label :for="`item-unit-price-${index}`"
-                        >Unit Price</Label
-                      >
-                      <Input
-                        :id="`item-unit-price-${index}`"
-                        v-model="item.unit_price"
-                        type="number"
-                        step="0.01"
-                        min="0"
-                        placeholder="0.00"
-                        @input="updateItemTotal(index)"
-                      />
-                    </div>
-                    <div>
-                      <Label :for="`item-total-${index}`">Line Total</Label>
-                      <Input
-                        :id="`item-total-${index}`"
-                        v-model="item.total"
-                        readonly
-                        placeholder="0.00"
-                        class="bg-muted"
-                      />
-                    </div>
-                  </div>
-                  <div class="flex justify-end">
-                    <Button
-                      type="button"
-                      @click="removeItemRow(index)"
-                      variant="destructive"
-                      size="sm"
-                    >
-                      <Trash2 class="h-3 w-3 mr-1" />
-                      Remove Item
-                    </Button>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div class="flex justify-end gap-2">
-              <Button
-                type="button"
-                @click="editDialogOpen = false"
-                variant="outline"
-              >
-                Cancel
-              </Button>
-              <Button type="submit" :disabled="savingInvoice">
-                <Loader2
-                  v-if="savingInvoice"
-                  class="h-4 w-4 mr-2 animate-spin"
-                />
-                Update Invoice
-              </Button>
-            </div>
-          </form>
-        </DialogContent>
-      </Dialog>
     </div>
   </div>
 </template>
