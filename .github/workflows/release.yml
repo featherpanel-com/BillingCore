@@ -1,395 +1,144 @@
-name: Build and Release Plugin
+name: Release FPA
 
 on:
-  release:
-    types: [published]
   workflow_dispatch:
     inputs:
       version:
-        description: "Plugin version (e.g., 1.0.0)"
+        description: Release version (e.g. 1.0.4). Leave empty to use conf.yml.
         required: false
-        type: string
-        default: "1.1."
-      changelog:
-        description: "Changelog text"
-        required: false
-        type: string
-        default: "Release"
-      min_panel_version:
-        description: "Minimum panel version (default: 1.1.2)"
-        required: false
-        type: string
-        default: "1.1.2"
-      max_panel_version:
-        description: "Maximum panel version (default: 2.0.0)"
-        required: false
-        type: string
-        default: "2.0.0"
+        default: ""
+      environment:
+        description: Mythic Marketplace environment
+        type: choice
+        options:
+          - production
+          - dev
+        default: production
+
+permissions:
+  contents: write
 
 jobs:
-  build-and-release:
+  release:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout code
+      - name: Checkout
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: latest
-          run_install: false
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: "24"
-          cache: "pnpm"
-          cache-dependency-path: |
-            Frontend/App/pnpm-lock.yaml
-            backend/storage/addons/billingcore/Frontend/App/pnpm-lock.yaml
-
-      - name: Determine plugin directory
-        id: plugin_dir
-        run: |
-          # Check if we're in a plugin-only repo or full featherpanel repo
-          if [ -f "conf.yml" ] && [ -f "build-release.sh" ]; then
-            # Plugin-only repo (root is the plugin)
-            echo "PLUGIN_DIR=." >> $GITHUB_OUTPUT
-            echo "CONF_FILE=./conf.yml" >> $GITHUB_OUTPUT
-            echo "FRONTEND_DIR=./Frontend/App" >> $GITHUB_OUTPUT
-          elif [ -f "backend/storage/addons/billingcore/conf.yml" ]; then
-            # Full featherpanel repo
-            echo "PLUGIN_DIR=backend/storage/addons/billingcore" >> $GITHUB_OUTPUT
-            echo "CONF_FILE=backend/storage/addons/billingcore/conf.yml" >> $GITHUB_OUTPUT
-            echo "FRONTEND_DIR=backend/storage/addons/billingcore/Frontend/App" >> $GITHUB_OUTPUT
-          else
-            echo "::error::Could not find plugin directory"
-            exit 1
-          fi
-
-      - name: Update conf.yml version
-        id: update_version
-        run: |
-          CONF_FILE="${{ steps.plugin_dir.outputs.CONF_FILE }}"
-
-          # Determine version from release tag, workflow input, or conf.yml
-          if [ "${{ github.event_name }}" == "workflow_dispatch" ] && [ -n "${{ github.event.inputs.version }}" ]; then
-            VERSION="${{ github.event.inputs.version }}"
-          elif [ "${{ github.event_name }}" == "release" ]; then
-            # Extract version from release tag (remove 'v' prefix if present)
-            VERSION="${{ github.event.release.tag_name }}"
-            VERSION="${VERSION#v}"
-          else
-            # Fallback to conf.yml version
-            VERSION=$(grep -E "^\s*version:" "${CONF_FILE}" | sed -E 's/.*version:\s*["'\'']?([^"'\'']+)["'\'']?/\1/' | tr -d ' ')
-          fi
-
-          if [ -z "${VERSION}" ]; then
-            echo "::error::Could not determine version"
-            exit 1
-          fi
-
-          echo "Updating conf.yml version to: ${VERSION}"
-
-          # Update version in conf.yml using sed
-          if [[ "$OSTYPE" == "darwin"* ]]; then
-            # macOS sed requires -i '' with extension
-            sed -i '' "s/^\(\s*version:\s*\)[\"']\?[^\"']*[\"']\?/\1${VERSION}/" "${CONF_FILE}"
-          else
-            # Linux sed
-            sed -i "s/^\(\s*version:\s*\)[\"']\?[^\"']*[\"']\?/\1${VERSION}/" "${CONF_FILE}"
-          fi
-
-          # Verify the update
-          UPDATED_VERSION=$(grep -E "^\s*version:" "${CONF_FILE}" | sed -E 's/.*version:\s*["'\'']?([^"'\'']+)["'\'']?/\1/' | tr -d ' ')
-          if [ "${UPDATED_VERSION}" != "${VERSION}" ]; then
-            echo "::error::Failed to update version in conf.yml"
-            echo "Expected: ${VERSION}, Got: ${UPDATED_VERSION}"
-            exit 1
-          fi
-
-          echo "version=${VERSION}" >> $GITHUB_OUTPUT
-          echo "Successfully updated conf.yml version to ${VERSION}"
-
-      - name: Make build script executable
-        run: chmod +x ${{ steps.plugin_dir.outputs.PLUGIN_DIR }}/build-release.sh
-
-      - name: Build plugin
-        id: build
-        run: ./build-release.sh
-        working-directory: ${{ steps.plugin_dir.outputs.PLUGIN_DIR }}
-
-      - name: Cache apt packages
-        uses: actions/cache@v4
-        with:
-          path: |
-            /var/cache/apt/archives
-            /var/lib/apt/lists
-          key: ${{ runner.os }}-apt-${{ hashFiles('**/apt-cache-key') }}
-          restore-keys: |
-            ${{ runner.os }}-apt-
-
-      - name: Install zip utility
-        run: |
-          # Check if zip is already installed
-          if command -v zip &> /dev/null; then
-            echo "zip is already installed"
-            zip --version
-          else
-            echo "Installing zip..."
-            sudo apt-get update -qq
-            sudo apt-get install -y zip
-          fi
-
-      - name: Extract plugin metadata
-        id: metadata
-        run: |
-          # Read conf.yml (use path from plugin_dir step)
-          CONF_FILE="${{ steps.plugin_dir.outputs.CONF_FILE }}"
-
-          # Extract version (use workflow input if provided, otherwise from conf.yml or tag)
-          if [ "${{ github.event_name }}" == "workflow_dispatch" ] && [ -n "${{ github.event.inputs.version }}" ]; then
-            VERSION="${{ github.event.inputs.version }}"
-          elif [ "${{ github.event_name }}" == "release" ]; then
-            # Try to extract version from release tag (remove 'v' prefix if present)
-            VERSION="${{ github.event.release.tag_name }}"
-            VERSION="${VERSION#v}"
-          else
-            VERSION=$(grep -E "^\s*version:" "${CONF_FILE}" | sed -E 's/.*version:\s*["'\'']?([^"'\'']+)["'\'']?/\1/' | tr -d ' ')
-          fi
-
-          IDENTIFIER=$(grep -E "^\s*identifier:" "${CONF_FILE}" | sed -E 's/.*identifier:\s*["'\'']?([^"'\'']+)["'\'']?/\1/' | tr -d ' ')
-
-          # Extract dependencies array - handle YAML array format
-          DEP_ARRAY=()
-          IN_DEPS=false
-          while IFS= read -r line; do
-            # Check if we're in dependencies section
-            if [[ "$line" =~ ^[[:space:]]*dependencies:[[:space:]]*$ ]] || [[ "$line" =~ ^[[:space:]]*dependencies:[[:space:]]*\{[[:space:]]*$ ]]; then
-              IN_DEPS=true
-              continue
-            fi
-            
-            # Stop if we hit the next top-level key
-            if [ "$IN_DEPS" = true ] && [[ "$line" =~ ^[[:space:]]*[a-zA-Z_]+:[[:space:]]* ]] && ! [[ "$line" =~ ^[[:space:]]+- ]]; then
-              IN_DEPS=false
-            fi
-            
-            # Extract dependency entries (all dependencies: php, php-ext, composer, plugin)
-            if [ "$IN_DEPS" = true ] && [[ "$line" =~ ^[[:space:]]+-[[:space:]]*(.+) ]]; then
-              DEP="${BASH_REMATCH[1]}"
-              # Remove quotes if present
-              DEP=$(echo "$DEP" | sed -E "s/^['\"]|['\"]$//g")
-              # Include all dependencies (php=, php-ext=, composer=, plugin=)
-              if [[ "$DEP" =~ ^(php|php-ext|composer|plugin)= ]]; then
-                DEP_ARRAY+=("${DEP}")
-              fi
-            fi
-          done < "${CONF_FILE}"
-
-          # Build JSON array properly
-          if [ ${#DEP_ARRAY[@]} -eq 0 ]; then
-            DEP_JSON="[]"
-          else
-            DEP_JSON="["
-            for i in "${!DEP_ARRAY[@]}"; do
-              if [ $i -gt 0 ]; then
-                DEP_JSON="${DEP_JSON},"
-              fi
-              # Properly quote each dependency
-              DEP_JSON="${DEP_JSON}\"${DEP_ARRAY[$i]}\""
-            done
-            DEP_JSON="${DEP_JSON}]"
-          fi
-
-          echo "Built dependencies JSON: ${DEP_JSON}"
-
-          # Get min/max panel version from workflow input or use defaults
-          MIN_PANEL_VERSION="1.1.2"  # Default
-          MAX_PANEL_VERSION="2.0.0"  # Default
-
-          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
-            # Use workflow inputs if provided
-            if [ -n "${{ github.event.inputs.min_panel_version }}" ] && [ "${{ github.event.inputs.min_panel_version }}" != "null" ]; then
-              MIN_PANEL_VERSION="${{ github.event.inputs.min_panel_version }}"
-            fi
-            if [ -n "${{ github.event.inputs.max_panel_version }}" ] && [ "${{ github.event.inputs.max_panel_version }}" != "null" ]; then
-              MAX_PANEL_VERSION="${{ github.event.inputs.max_panel_version }}"
-            fi
-          fi
-
-          echo "Using min_panel_version: ${MIN_PANEL_VERSION}"
-          echo "Using max_panel_version: ${MAX_PANEL_VERSION}"
-
-          echo "version=${VERSION}" >> $GITHUB_OUTPUT
-          echo "identifier=${IDENTIFIER}" >> $GITHUB_OUTPUT
-          # Output dependencies as JSON string (use EOF to preserve JSON format with quotes)
-          # Double-check JSON is valid before outputting
-          if ! echo "${DEP_JSON}" | python3 -m json.tool > /dev/null 2>&1; then
-            echo "::error::Invalid JSON format before output: ${DEP_JSON}"
-            exit 1
-          fi
-          # Use printf to ensure exact string is written without shell interpretation
-          printf "dependencies<<EOF\n%s\nEOF\n" "${DEP_JSON}" >> $GITHUB_OUTPUT
-          echo "min_panel_version=${MIN_PANEL_VERSION}" >> $GITHUB_OUTPUT
-          echo "max_panel_version=${MAX_PANEL_VERSION}" >> $GITHUB_OUTPUT
-
-          # Debug: Show what dependencies JSON looks like
-          echo "Dependencies JSON built: ${DEP_JSON}"
-          # Validate JSON format
-          echo "${DEP_JSON}" | python3 -m json.tool > /dev/null 2>&1 && echo "✓ Valid JSON" || echo "✗ Invalid JSON format"
-
-          # Package ID is always 31 for billingcore
-          PACKAGE_ID="33"
-          echo "package_id=${PACKAGE_ID}" >> $GITHUB_OUTPUT
-
-          # Get changelog
-          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
-            CHANGELOG="${{ github.event.inputs.changelog }}"
-          elif [ "${{ github.event_name }}" == "release" ]; then
-            CHANGELOG="${{ github.event.release.body }}"
-            if [ -z "${CHANGELOG}" ] || [ "${CHANGELOG}" = "null" ]; then
-              CHANGELOG="Release ${VERSION}"
-            fi
-          else
-            CHANGELOG="Release ${VERSION}"
-          fi
-          echo "changelog<<EOF" >> $GITHUB_OUTPUT
-          echo "${CHANGELOG}" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
-
-      - name: Upload to Cloud API
+      - name: Validate secrets
+        shell: bash
         env:
-          TEAM_UUID: ${{ secrets.CLOUD_TEAM_UUID }}
-          API_TOKEN: ${{ secrets.CLOUD_API_TOKEN }}
+          HAS_PRODUCT_ID: ${{ secrets.MYTHIC_PRODUCT_ID != '' }}
+          HAS_RELEASE_TOKEN: ${{ secrets.MYTHIC_RELEASE_TOKEN != '' }}
         run: |
-          if [ -z "${TEAM_UUID}" ] || [ -z "${API_TOKEN}" ]; then
-            echo "::warning::Cloud API credentials not set. Skipping upload."
-            echo "Set CLOUD_TEAM_UUID and CLOUD_API_TOKEN secrets to enable automatic upload."
+          missing=0
+          if [ "${HAS_PRODUCT_ID}" != "true" ]; then
+            echo "::error::Missing repository secret MYTHIC_PRODUCT_ID"
+            missing=1
+          fi
+          if [ "${HAS_RELEASE_TOKEN}" != "true" ]; then
+            echo "::error::Missing repository secret MYTHIC_RELEASE_TOKEN"
+            missing=1
+          fi
+          if [ "${missing}" -ne 0 ]; then
+            exit 1
+          fi
+
+      - name: Resolve version
+        id: version
+        shell: bash
+        run: |
+          if [ -n "${{ inputs.version }}" ]; then
+            ver="${{ inputs.version }}"
+          else
+            ver="$(grep -E '^\s*version:' conf.yml | head -1 | sed -E 's/^[[:space:]]*version:[[:space:]]*//; s/["'\'']//g')"
+          fi
+          if [ -z "${ver}" ]; then
+            echo "::error::Could not resolve release version. Set the version input or add version to conf.yml."
+            exit 1
+          fi
+          echo "version=${ver}" >> "$GITHUB_OUTPUT"
+
+      - name: Sync conf.yml version
+        id: sync_conf
+        shell: bash
+        run: |
+          ver="${{ steps.version.outputs.version }}"
+          current="$(grep -E '^\s*version:' conf.yml | head -1 | sed -E 's/^[[:space:]]*version:[[:space:]]*//; s/["'\'']//g')"
+          if [ "${current}" = "${ver}" ]; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "conf.yml already at ${ver}"
             exit 0
           fi
+          sed -i -E "s/^([[:space:]]*version:[[:space:]]*).*/\1${ver}/" conf.yml
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+          echo "Updated conf.yml: ${current} -> ${ver}"
 
-          # Find the .fpa file created by the build script
-          PLUGIN_DIR="${{ steps.plugin_dir.outputs.PLUGIN_DIR }}"
-
-          # Try to use build step output first
-          if [ -n "${{ steps.build.outputs.export_file }}" ]; then
-            EXPORT_FILE_RELATIVE="${{ steps.build.outputs.export_file }}"
-            if [ "${PLUGIN_DIR}" = "." ]; then
-              EXPORT_FILE="${EXPORT_FILE_RELATIVE}"
-            else
-              EXPORT_FILE="${PLUGIN_DIR}/${EXPORT_FILE_RELATIVE}"
-            fi
-          else
-            # Fallback: find the .fpa file
-            EXPORT_FILE=$(find "${PLUGIN_DIR}" -maxdepth 1 -name "*.fpa" -type f | head -n1)
-            if [ -z "${EXPORT_FILE}" ]; then
-              EXPORT_FILE=$(find . -name "*.fpa" -type f | head -n1)
-            fi
-          fi
-
-          if [ -z "${EXPORT_FILE}" ] || [ ! -f "${EXPORT_FILE}" ]; then
-            echo "::error::Export file not found"
-            echo "Plugin dir: ${PLUGIN_DIR}"
-            echo "Build output: ${{ steps.build.outputs.export_file }}"
-            echo "Looking for .fpa files:"
-            ls -la "${PLUGIN_DIR}"/*.fpa 2>/dev/null || find . -name "*.fpa" -type f 2>/dev/null || echo "No .fpa files found"
-            exit 1
-          fi
-
-          echo "Using export file: ${EXPORT_FILE}"
-
-          echo "Uploading ${EXPORT_FILE} to cloud API..."
-
-          # Get changelog (replace newlines with spaces for form data)
-          CHANGELOG_TEXT="${{ steps.metadata.outputs.changelog }}"
-          CHANGELOG_TEXT=$(echo "${CHANGELOG_TEXT}" | tr '\n' ' ' | sed 's/  */ /g')
-
-          # Get dependencies JSON (should be a valid JSON array string like ["php=8.5","php-ext=pdo"])
-          DEPENDENCIES_JSON="${{ steps.metadata.outputs.dependencies }}"
-
-          # Debug: Show what we're receiving from GitHub Actions output
-          echo "Dependencies JSON received from output: ${DEPENDENCIES_JSON}"
-          echo "Length: ${#DEPENDENCIES_JSON}"
-          echo "Hex dump of received value:"
-          echo -n "${DEPENDENCIES_JSON}" | od -c | head -3
-
-          # If quotes are missing, rebuild the JSON properly
-          if [[ ! "${DEPENDENCIES_JSON}" =~ \".*\" ]]; then
-            echo "::warning::Quotes appear to be missing, rebuilding JSON from array format"
-            # Extract dependencies from the malformed string [php=8.5,php-ext=pdo]
-            # Remove brackets, split by comma, add quotes, rejoin
-            DEPENDENCIES_JSON=$(echo "${DEPENDENCIES_JSON}" | sed 's/^\[//;s/\]$//' | tr ',' '\n' | sed 's/^/"/;s/$/"/' | tr '\n' ',' | sed 's/,$//' | sed 's/^/[/;s/$/]/')
-            echo "Rebuilt JSON: ${DEPENDENCIES_JSON}"
-          fi
-
-          # Validate it's proper JSON before sending
-          if ! echo "${DEPENDENCIES_JSON}" | python3 -m json.tool > /dev/null 2>&1; then
-            echo "::error::Invalid dependencies JSON format: ${DEPENDENCIES_JSON}"
-            echo "Expected format: [\"php=8.5\",\"php-ext=pdo\"]"
-            exit 1
-          fi
-
-          # Ensure JSON is properly formatted (re-encode with python to guarantee valid JSON)
-          FINAL_DEPENDENCIES_JSON=$(echo "${DEPENDENCIES_JSON}" | python3 -c "import sys, json; print(json.dumps(json.load(sys.stdin)), end='')" 2>/dev/null || echo "${DEPENDENCIES_JSON}")
-
-          # Final validation
-          if ! echo "${FINAL_DEPENDENCIES_JSON}" | python3 -m json.tool > /dev/null 2>&1; then
-            echo "::error::Final JSON validation failed: ${FINAL_DEPENDENCIES_JSON}"
-            exit 1
-          fi
-
-          echo "Final dependencies JSON to send: ${FINAL_DEPENDENCIES_JSON}"
-          echo "JSON length: ${#FINAL_DEPENDENCIES_JSON}"
-
-          # Upload using curl with multipart form data
-          # Send dependencies directly as form field value (not via file)
-          # Use printf to ensure exact string is passed without shell interpretation
-          RESPONSE=$(curl -s -w "\n%{http_code}" -X POST \
-            "https://cloudrelay.mythicalsystems.xyz/api/user/packages/${{ steps.metadata.outputs.package_id }}/versions" \
-            -H "accept: application/json, text/plain, */*" \
-            -H "User-Agent: GitHub Runner" \
-            -H "Cookie: remember_token=${API_TOKEN}; ghagent=1" \
-            -H "Referer: https://github.com/${{ github.repository }}" \
-            -H "x-team-uuid: ${TEAM_UUID}" \
-            -F "file=@${EXPORT_FILE}" \
-            -F "version=${{ steps.metadata.outputs.version }}" \
-            -F "changelog=${CHANGELOG_TEXT}" \
-            -F "dependencies=${FINAL_DEPENDENCIES_JSON}" \
-            -F "min_panel_version=${{ steps.metadata.outputs.min_panel_version }}" \
-            -F "max_panel_version=${{ steps.metadata.outputs.max_panel_version }}" \
-            -F "team_uuid=${TEAM_UUID}")
-
-          HTTP_CODE=$(echo "${RESPONSE}" | tail -n1)
-          BODY=$(echo "${RESPONSE}" | sed '$d')
-
-          # Debug output
-          echo "::debug::HTTP Response Code: ${HTTP_CODE}"
-          echo "::debug::Response preview: $(echo "${BODY}" | head -c 500)"
-
-          if [ "${HTTP_CODE}" -ge 200 ] && [ "${HTTP_CODE}" -lt 300 ]; then
-            echo "::notice::Plugin uploaded successfully! (HTTP ${HTTP_CODE})"
-            echo "Response: ${BODY}"
-          else
-            echo "::error::Failed to upload plugin (HTTP ${HTTP_CODE})"
-            echo "Response: ${BODY}"
-            exit 1
-          fi
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
+      - name: Build .fpa
+        id: build
+        uses: MythicalLTD/.github/actions/build-fpa@v1
         with:
-          name: plugin-release
-          path: ${{ steps.plugin_dir.outputs.PLUGIN_DIR }}/*.fpa
-          retention-days: 30
+          skip_checkout: "true"
+          build_frontend: "true"
+          package_manager: "auto"
+          artifact_name: ""
 
-      - name: Create GitHub Release Asset
-        if: github.event_name == 'release'
-        uses: softprops/action-gh-release@v1
+      - name: Publish to Mythic Marketplace
+        id: publish
+        uses: MythicalLTD/.github/actions/publish-release@v1
         with:
-          files: ${{ steps.plugin_dir.outputs.PLUGIN_DIR }}/*.fpa
+          product_id: ${{ secrets.MYTHIC_PRODUCT_ID }}
+          environment: ${{ inputs.environment }}
+          version: ${{ steps.version.outputs.version }}
+          changelog: Updated to latest plugin version
+          file_path: ${{ steps.build.outputs.fpa_file }}
+          title: "${{ steps.build.outputs.plugin_identifier }} ${{ steps.version.outputs.version }}"
+          release_token: ${{ secrets.MYTHIC_RELEASE_TOKEN }}
+
+      - name: Create GitHub Release
+        shell: bash
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          ver="${{ steps.version.outputs.version }}"
+          tag="v${ver}"
+          fpa="${{ steps.build.outputs.fpa_file }}"
+
+          if gh release view "${tag}" >/dev/null 2>&1; then
+            gh release upload "${tag}" "${fpa}" --clobber
+            gh release edit "${tag}" --notes "Updated to latest plugin version"
+          else
+            gh release create "${tag}" "${fpa}" --title "${tag}" --notes "Updated to latest plugin version"
+          fi
+
+      - name: Commit version bump
+        if: steps.sync_conf.outputs.changed == 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git diff --quiet -- conf.yml; then
+            echo "conf.yml already matches remote — nothing to commit"
+            exit 0
+          fi
+          git add conf.yml
+          git commit -m "chore: bump version to ${{ steps.version.outputs.version }}"
+          git push
+
+      - name: Release summary
+        if: success()
+        shell: bash
+        run: |
+          {
+            echo "### Release published"
+            echo "| Plugin | \`${{ steps.build.outputs.plugin_identifier }}\` |"
+            echo "| Version | \`${{ steps.version.outputs.version }}\` |"
+            echo "| FPA | \`${{ steps.build.outputs.fpa_filename }}\` |"
+            echo "| Environment | \`${{ inputs.environment }}\` |"
+            echo "| Marketplace release | \`${{ steps.publish.outputs.release_url }}\` |"
+            echo "| GitHub release | [\`v${{ steps.version.outputs.version }}\`](${{ github.server_url }}/${{ github.repository }}/releases/tag/v${{ steps.version.outputs.version }}) |"
+          } >> "$GITHUB_STEP_SUMMARY"
