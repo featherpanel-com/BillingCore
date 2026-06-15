@@ -1,0 +1,14 @@
+# Built frontend assets (built in CI during release, or locally via pnpm build)
+Frontend/Components/*/dist/
+
+# Node dependencies
+Frontend/App/node_modules/
+node_modules/
+
+# Vite / TypeScript build cache
+Frontend/App/.tmp/
+Frontend/App/**/*.tsbuildinfo
+
+# Other package manager lockfiles
+Frontend/App/yarn.lock
+Frontend/App/package-lock.json
