@@ -20,7 +20,7 @@ import {
   Wallet,
   Info,
   Edit,
-} from "lucide-vue-next";
+} from "@lucide/vue";
 import { useBillingAPI, type Credits } from "@/composables/useBillingAPI";
 import { useToast } from "vue-toastification";
 

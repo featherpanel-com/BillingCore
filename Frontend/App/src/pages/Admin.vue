@@ -6,13 +6,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import {
   Loader2,
   Users,
   DollarSign,
@@ -21,7 +14,8 @@ import {
   ChevronLeft,
   ChevronRight,
   ExternalLink,
-} from "lucide-vue-next";
+  ArrowLeft,
+} from "@lucide/vue";
 import {
   useAdminBillingAPI,
   type Statistics,
@@ -348,6 +342,213 @@ onMounted(() => {
 <template>
   <div class="w-full h-full overflow-auto p-4">
     <div class="container mx-auto max-w-6xl">
+      <template v-if="showFeatherPanelIframe">
+        <div class="mb-6 flex items-center gap-3">
+          <Button
+            variant="outline"
+            size="icon"
+            @click="showFeatherPanelIframe = false"
+          >
+            <ArrowLeft class="h-4 w-4" />
+          </Button>
+          <div>
+            <h1 class="text-2xl font-semibold">FeatherPanel User Management</h1>
+            <p class="text-sm text-muted-foreground">
+              View and edit user details in FeatherPanel
+            </p>
+          </div>
+        </div>
+        <Card class="p-0 overflow-hidden bg-card/50 backdrop-blur-sm h-[75vh]">
+          <div class="h-full overflow-hidden">
+            <iframe
+              v-if="featherPanelUserUrl"
+              :src="featherPanelUserUrl"
+              class="w-full h-full border-0"
+            ></iframe>
+          </div>
+        </Card>
+      </template>
+
+      <template v-else-if="userDialogOpen">
+        <div class="mb-6 flex items-center gap-3">
+          <Button
+            variant="outline"
+            size="icon"
+            @click="userDialogOpen = false"
+          >
+            <ArrowLeft class="h-4 w-4" />
+          </Button>
+          <div>
+            <h1 class="text-2xl font-semibold">
+              User: {{ selectedUser?.username || "N/A" }}
+            </h1>
+            <p class="text-sm text-muted-foreground">
+              User details and billing management
+            </p>
+          </div>
+        </div>
+        <Card class="p-6 bg-card/50 backdrop-blur-sm">
+          <div
+          v-if="loadingUserDetails"
+          class="flex items-center justify-center py-12"
+        >
+          <Loader2 class="h-8 w-8 animate-spin" />
+        </div>
+        <div v-else-if="selectedUser" class="space-y-6">
+          <!-- User Info -->
+          <div class="grid grid-cols-2 gap-4 text-sm">
+            <div>
+              <span class="text-muted-foreground">Email:</span>
+              <div class="font-medium">{{ selectedUser.email }}</div>
+            </div>
+            <div>
+              <span class="text-muted-foreground">Credits:</span>
+              <div class="font-medium">
+                {{ selectedUser.credits_formatted }}
+              </div>
+            </div>
+          </div>
+
+          <!-- Open FeatherPanel User Edit -->
+          <div v-if="selectedUser.uuid" class="flex gap-2">
+            <Button
+              @click="openFeatherPanelUserEdit(selectedUser.uuid)"
+              variant="outline"
+              class="flex-1"
+            >
+              <ExternalLink class="h-4 w-4 mr-2" />
+              Open in New Tab
+            </Button>
+            <Button
+              @click="openFeatherPanelUserEditInIframe(selectedUser.uuid)"
+              variant="outline"
+              class="flex-1"
+            >
+              <ExternalLink class="h-4 w-4 mr-2" />
+              Open in Window
+            </Button>
+          </div>
+
+          <!-- Credits Management -->
+          <div>
+            <h4 class="font-semibold mb-3">Credits Management</h4>
+            <div class="flex gap-2 items-end">
+              <div class="flex-1">
+                <Label for="credit-amount">Amount</Label>
+                <Input
+                  id="credit-amount"
+                  v-model="creditAmount"
+                  type="number"
+                  placeholder="Amount"
+                />
+              </div>
+              <Button @click="handleAddCredits">Add</Button>
+              <Button @click="handleRemoveCredits" variant="destructive"
+                >Remove</Button
+              >
+              <Button @click="handleSetCredits" variant="outline">Set</Button>
+            </div>
+          </div>
+
+          <!-- Billing Information -->
+          <div>
+            <h4 class="font-semibold mb-3">Billing Information</h4>
+            <form @submit="saveUserBillingInfo" class="space-y-4">
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <Label for="full_name">Full Name</Label>
+                  <Input
+                    id="full_name"
+                    name="full_name"
+                    :default-value="selectedUserBillingInfo?.full_name || ''"
+                  />
+                </div>
+                <div>
+                  <Label for="company_name">Company Name</Label>
+                  <Input
+                    id="company_name"
+                    name="company_name"
+                    :default-value="selectedUserBillingInfo?.company_name || ''"
+                  />
+                </div>
+                <div>
+                  <Label for="address_line1">Address Line 1</Label>
+                  <Input
+                    id="address_line1"
+                    name="address_line1"
+                    :default-value="
+                      selectedUserBillingInfo?.address_line1 || ''
+                    "
+                  />
+                </div>
+                <div>
+                  <Label for="address_line2">Address Line 2</Label>
+                  <Input
+                    id="address_line2"
+                    name="address_line2"
+                    :default-value="
+                      selectedUserBillingInfo?.address_line2 || ''
+                    "
+                  />
+                </div>
+                <div>
+                  <Label for="city">City</Label>
+                  <Input
+                    id="city"
+                    name="city"
+                    :default-value="selectedUserBillingInfo?.city || ''"
+                  />
+                </div>
+                <div>
+                  <Label for="state">State</Label>
+                  <Input
+                    id="state"
+                    name="state"
+                    :default-value="selectedUserBillingInfo?.state || ''"
+                  />
+                </div>
+                <div>
+                  <Label for="postal_code">Postal Code</Label>
+                  <Input
+                    id="postal_code"
+                    name="postal_code"
+                    :default-value="selectedUserBillingInfo?.postal_code || ''"
+                  />
+                </div>
+                <div>
+                  <Label for="country_code">Country Code</Label>
+                  <Input
+                    id="country_code"
+                    name="country_code"
+                    :default-value="selectedUserBillingInfo?.country_code || ''"
+                    maxlength="2"
+                  />
+                </div>
+                <div>
+                  <Label for="vat_id">VAT ID</Label>
+                  <Input
+                    id="vat_id"
+                    name="vat_id"
+                    :default-value="selectedUserBillingInfo?.vat_id || ''"
+                  />
+                </div>
+                <div>
+                  <Label for="phone">Phone</Label>
+                  <Input
+                    id="phone"
+                    name="phone"
+                    :default-value="selectedUserBillingInfo?.phone || ''"
+                  />
+                </div>
+              </div>
+              <Button type="submit">Save Billing Info</Button>
+            </form>
+          </div>
+        </div>
+        </Card>
+      </template>
+
+      <template v-else>
       <div class="mb-6">
         <h1 class="text-2xl font-semibold">Billing Core - Admin</h1>
         <p class="text-sm text-muted-foreground">
@@ -731,199 +932,8 @@ onMounted(() => {
           </div>
         </TabsContent>
       </Tabs>
+      </template>
+
     </div>
-
-    <!-- User Details Dialog -->
-    <Dialog v-model:open="userDialogOpen">
-      <DialogContent class="max-w-4xl max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle>
-            User: {{ selectedUser?.username || "N/A" }}
-          </DialogTitle>
-          <DialogDescription
-            >User details and billing management</DialogDescription
-          >
-        </DialogHeader>
-
-        <div
-          v-if="loadingUserDetails"
-          class="flex items-center justify-center py-12"
-        >
-          <Loader2 class="h-8 w-8 animate-spin" />
-        </div>
-        <div v-else-if="selectedUser" class="space-y-6">
-          <!-- User Info -->
-          <div class="grid grid-cols-2 gap-4 text-sm">
-            <div>
-              <span class="text-muted-foreground">Email:</span>
-              <div class="font-medium">{{ selectedUser.email }}</div>
-            </div>
-            <div>
-              <span class="text-muted-foreground">Credits:</span>
-              <div class="font-medium">
-                {{ selectedUser.credits_formatted }}
-              </div>
-            </div>
-          </div>
-
-          <!-- Open FeatherPanel User Edit -->
-          <div v-if="selectedUser.uuid" class="flex gap-2">
-            <Button
-              @click="openFeatherPanelUserEdit(selectedUser.uuid)"
-              variant="outline"
-              class="flex-1"
-            >
-              <ExternalLink class="h-4 w-4 mr-2" />
-              Open in New Tab
-            </Button>
-            <Button
-              @click="openFeatherPanelUserEditInIframe(selectedUser.uuid)"
-              variant="outline"
-              class="flex-1"
-            >
-              <ExternalLink class="h-4 w-4 mr-2" />
-              Open in Window
-            </Button>
-          </div>
-
-          <!-- Credits Management -->
-          <div>
-            <h4 class="font-semibold mb-3">Credits Management</h4>
-            <div class="flex gap-2 items-end">
-              <div class="flex-1">
-                <Label for="credit-amount">Amount</Label>
-                <Input
-                  id="credit-amount"
-                  v-model="creditAmount"
-                  type="number"
-                  placeholder="Amount"
-                />
-              </div>
-              <Button @click="handleAddCredits">Add</Button>
-              <Button @click="handleRemoveCredits" variant="destructive"
-                >Remove</Button
-              >
-              <Button @click="handleSetCredits" variant="outline">Set</Button>
-            </div>
-          </div>
-
-          <!-- Billing Information -->
-          <div>
-            <h4 class="font-semibold mb-3">Billing Information</h4>
-            <form @submit="saveUserBillingInfo" class="space-y-4">
-              <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <Label for="full_name">Full Name</Label>
-                  <Input
-                    id="full_name"
-                    name="full_name"
-                    :default-value="selectedUserBillingInfo?.full_name || ''"
-                  />
-                </div>
-                <div>
-                  <Label for="company_name">Company Name</Label>
-                  <Input
-                    id="company_name"
-                    name="company_name"
-                    :default-value="selectedUserBillingInfo?.company_name || ''"
-                  />
-                </div>
-                <div>
-                  <Label for="address_line1">Address Line 1</Label>
-                  <Input
-                    id="address_line1"
-                    name="address_line1"
-                    :default-value="
-                      selectedUserBillingInfo?.address_line1 || ''
-                    "
-                  />
-                </div>
-                <div>
-                  <Label for="address_line2">Address Line 2</Label>
-                  <Input
-                    id="address_line2"
-                    name="address_line2"
-                    :default-value="
-                      selectedUserBillingInfo?.address_line2 || ''
-                    "
-                  />
-                </div>
-                <div>
-                  <Label for="city">City</Label>
-                  <Input
-                    id="city"
-                    name="city"
-                    :default-value="selectedUserBillingInfo?.city || ''"
-                  />
-                </div>
-                <div>
-                  <Label for="state">State</Label>
-                  <Input
-                    id="state"
-                    name="state"
-                    :default-value="selectedUserBillingInfo?.state || ''"
-                  />
-                </div>
-                <div>
-                  <Label for="postal_code">Postal Code</Label>
-                  <Input
-                    id="postal_code"
-                    name="postal_code"
-                    :default-value="selectedUserBillingInfo?.postal_code || ''"
-                  />
-                </div>
-                <div>
-                  <Label for="country_code">Country Code</Label>
-                  <Input
-                    id="country_code"
-                    name="country_code"
-                    :default-value="selectedUserBillingInfo?.country_code || ''"
-                    maxlength="2"
-                  />
-                </div>
-                <div>
-                  <Label for="vat_id">VAT ID</Label>
-                  <Input
-                    id="vat_id"
-                    name="vat_id"
-                    :default-value="selectedUserBillingInfo?.vat_id || ''"
-                  />
-                </div>
-                <div>
-                  <Label for="phone">Phone</Label>
-                  <Input
-                    id="phone"
-                    name="phone"
-                    :default-value="selectedUserBillingInfo?.phone || ''"
-                  />
-                </div>
-              </div>
-              <Button type="submit">Save Billing Info</Button>
-            </form>
-          </div>
-        </div>
-      </DialogContent>
-    </Dialog>
-
-    <!-- FeatherPanel User Edit Iframe Dialog -->
-    <Dialog v-model:open="showFeatherPanelIframe">
-      <DialogContent
-        class="max-w-[95vw] max-h-[95vh] w-[95vw] h-[95vh] p-0 flex flex-col"
-      >
-        <DialogHeader class="px-6 pt-6 pb-4 border-b shrink-0">
-          <DialogTitle>FeatherPanel User Management</DialogTitle>
-          <DialogDescription
-            >View and edit user details in FeatherPanel</DialogDescription
-          >
-        </DialogHeader>
-        <div class="flex-1 overflow-hidden min-h-0">
-          <iframe
-            v-if="featherPanelUserUrl"
-            :src="featherPanelUserUrl"
-            class="w-full h-full border-0"
-          ></iframe>
-        </div>
-      </DialogContent>
-    </Dialog>
   </div>
 </template>

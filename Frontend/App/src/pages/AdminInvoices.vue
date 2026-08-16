@@ -26,7 +26,7 @@ import {
   Calendar,
   DollarSign,
   ArrowLeft,
-} from "lucide-vue-next";
+} from "@lucide/vue";
 import {
   useAdminBillingAPI,
   type Invoice,

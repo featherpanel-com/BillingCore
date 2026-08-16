@@ -5,7 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Loader2, Wallet, FileText, MapPin, ExternalLink, User, Mail } from "lucide-vue-next";
+import { Loader2, Wallet, FileText, MapPin, ExternalLink, User, Mail } from "@lucide/vue";
 import {
   useAdminBillingAPI,
   type UserWithCredits,

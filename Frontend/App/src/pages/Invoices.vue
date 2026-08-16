@@ -23,7 +23,7 @@ import {
   Download,
   MoreVertical,
   ArrowLeft,
-} from "lucide-vue-next";
+} from "@lucide/vue";
 import {
   DropdownMenu,
   DropdownMenuContent,

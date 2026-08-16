@@ -4,7 +4,7 @@ plugin:
   description: 'Powerful billing management core via FeatherPanel!'
   flags:
     - hasEvents
-  version: 2.0.2
+  version: 2.0.3
   target: v2
   author:
     - NaysKutzu
