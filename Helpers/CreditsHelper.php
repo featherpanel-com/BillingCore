@@ -37,10 +37,16 @@ class CreditsHelper
     /**
      * Add credits to a user's balance.
      *
+     * A zero amount is a successful no-op (e.g. refunding a free checkout).
+     *
      * @return bool true on success, false on failure
      */
     public static function addUserCredits(int $userId, int $amount): bool
     {
+        if ($amount === 0) {
+            return true;
+        }
+
         return Billing::addCredits($userId, $amount);
     }
 
@@ -48,11 +54,16 @@ class CreditsHelper
      * Remove credits from a user's balance.
      *
      * This will never allow the balance to go below zero.
+     * A zero amount is a successful no-op (e.g. 100% coupon / free plan).
      *
      * @return bool true on success, false if insufficient credits or on error
      */
     public static function removeUserCredits(int $userId, int $amount): bool
     {
+        if ($amount === 0) {
+            return true;
+        }
+
         return Billing::removeCredits($userId, $amount);
     }
 }
