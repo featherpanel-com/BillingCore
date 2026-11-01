@@ -100,7 +100,7 @@ class Billing
             );
             $stmt->execute(['user_id' => $userId]);
         } catch (\PDOException $e) {
-            // Duplicate key means another request created the row – fetch it.
+            // Duplicate key means another request created the row - fetch it.
             if ($e->getCode() !== '23000') {
                 App::getInstance(true)->getLogger()->error('Failed to create billing row: ' . $e->getMessage());
 
@@ -140,9 +140,13 @@ class Billing
         }
 
         $pdo = Database::getPdoConnection();
+        // Join an outer transaction when one is already open (PDO has no nested TX).
+        $ownsTransaction = !$pdo->inTransaction();
 
         try {
-            $pdo->beginTransaction();
+            if ($ownsTransaction) {
+                $pdo->beginTransaction();
+            }
 
             $row = self::lockRowForUser($pdo, $userId);
             if ($row === null) {
@@ -164,11 +168,13 @@ class Billing
                 ]);
             }
 
-            $pdo->commit();
+            if ($ownsTransaction) {
+                $pdo->commit();
+            }
 
             return true;
         } catch (\PDOException $e) {
-            if ($pdo->inTransaction()) {
+            if ($ownsTransaction && $pdo->inTransaction()) {
                 $pdo->rollBack();
             }
 
@@ -220,9 +226,15 @@ class Billing
         }
 
         $pdo = Database::getPdoConnection();
+        // Join an outer transaction when one is already open (PDO has no nested TX).
+        // Callers like billingredeem::redeem wrap usage + credit grant in one TX; a nested
+        // beginTransaction() throws and the follow-up rollBack() surfaces as REDEEM_ERROR.
+        $ownsTransaction = !$pdo->inTransaction();
 
         try {
-            $pdo->beginTransaction();
+            if ($ownsTransaction) {
+                $pdo->beginTransaction();
+            }
 
             $row = self::lockRowForUser($pdo, $userId);
             if ($row === null) {
@@ -234,8 +246,10 @@ class Billing
 
             $newCredits = $currentCredits + $delta;
             if ($newCredits < 0) {
-                // Not enough credits – rollback and fail.
-                $pdo->rollBack();
+                // Not enough credits — only roll back a TX we opened ourselves.
+                if ($ownsTransaction && $pdo->inTransaction()) {
+                    $pdo->rollBack();
+                }
 
                 return false;
             }
@@ -258,11 +272,13 @@ class Billing
                 ]);
             }
 
-            $pdo->commit();
+            if ($ownsTransaction) {
+                $pdo->commit();
+            }
 
             return true;
         } catch (\PDOException $e) {
-            if ($pdo->inTransaction()) {
+            if ($ownsTransaction && $pdo->inTransaction()) {
                 $pdo->rollBack();
             }
 
